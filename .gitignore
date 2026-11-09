@@ -1,0 +1,18 @@
+# Local config & secrets
+local.properties
+*.jks
+# NOTE: app/debug.keystore is intentionally committed (debug-only, stable CI signature).
+!app/debug.keystore
+
+# Build output
+build/
+.gradle/
+.kotlin/
+captures/
+*.apk
+*.aab
+
+# IDE
+.idea/
+*.iml
+.DS_Store
