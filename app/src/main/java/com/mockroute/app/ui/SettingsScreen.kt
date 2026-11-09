@@ -17,6 +17,18 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import com.mockroute.app.net.RoutingChoice
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -26,6 +38,71 @@ import com.mockroute.app.map.TileStyle
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+
+@Composable
+private fun RoutingSettings(vm: MainViewModel) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val s = settings ?: return
+    val choice = RoutingChoice.fromId(s.routingProvider)
+    Text("Routing", style = MaterialTheme.typography.titleMedium)
+    Column(Modifier.selectableGroup()) {
+        RoutingChoice.entries.forEach { c ->
+            Row(
+                Modifier.fillMaxWidth().selectable(selected = c == choice, onClick = { vm.setRoutingProvider(c.id) }, role = Role.RadioButton),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(selected = c == choice, onClick = null)
+                Text(c.label, Modifier.padding(start = 8.dp))
+            }
+        }
+    }
+    KeyField(
+        label = "OpenRouteService API key",
+        value = s.orsApiKey,
+        builtIn = BuildConfig.ORS_API_KEY.isNotBlank(),
+        onSave = vm::setOrsKey,
+    )
+    KeyField(
+        label = "GraphHopper API key",
+        value = s.graphHopperApiKey,
+        builtIn = BuildConfig.GRAPHHOPPER_API_KEY.isNotBlank(),
+        onSave = vm::setGraphHopperKey,
+    )
+    Text(
+        "OpenRouteService (HeiGIT, api.heigit.org): free key at openrouteservice.org — ~2,000 directions/day, " +
+            "40/min. GraphHopper free: 500 credits/day, non-commercial. Without a key MockRoute draws straight lines. " +
+            "Routes are cached on the phone for 30 days.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    OutlinedButton(onClick = vm::clearRouteCache) { Text("Clear route cache (${vm.routeCache.entryCount()})") }
+}
+
+@Composable
+private fun KeyField(label: String, value: String, builtIn: Boolean, onSave: (String) -> Unit) {
+    var text by rememberSaveable(value) { mutableStateOf(value) }
+    var visible by rememberSaveable { mutableStateOf(false) }
+    OutlinedTextField(
+        value = text,
+        onValueChange = { text = it },
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
+        supportingText = {
+            Text(
+                when {
+                    value.isNotBlank() -> "Using the key saved on this phone"
+                    builtIn -> "Empty: using the key built in from GitHub secrets"
+                    else -> "No key: straight-line fallback"
+                },
+            )
+        },
+        trailingIcon = { TextButton(onClick = { visible = !visible }) { Text(if (visible) "Hide" else "Show") } },
+        modifier = Modifier.fillMaxWidth(),
+    )
+    if (text != value) {
+        Button(onClick = { onSave(text) }) { Text("Save key") }
+    }
+}
 
 @Composable
 fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onCheckSetup: () -> Unit) {
@@ -64,6 +141,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onCheckSetup: () -> Un
                     onCheckedChange = { vm.setGmsLayer(it) },
                 )
             }
+
+            HorizontalDivider()
+            RoutingSettings(vm)
 
             HorizontalDivider()
             Text("Last real location", style = MaterialTheme.typography.titleMedium)

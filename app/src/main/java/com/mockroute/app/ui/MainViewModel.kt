@@ -10,6 +10,8 @@ import com.mockroute.app.location.RealLocationReader
 import com.mockroute.app.mock.GmsSupport
 import com.mockroute.app.mock.MockAppCheck
 import com.mockroute.app.mock.MockLocationService
+import com.mockroute.app.net.RouteCache
+import com.mockroute.app.net.RoutingService
 import com.mockroute.app.setup.SetupChecks
 import com.mockroute.app.setup.SetupStatus
 import com.mockroute.app.sim.SimError
@@ -52,6 +54,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val disclaimerDialog: StateFlow<Boolean> = _disclaimerDialog.asStateFlow()
 
     val gmsAvailable: Boolean = GmsSupport.isAvailable(app)
+
+    val routeCache = RouteCache(app)
+    val routing = RoutingService(routeCache)
+    val editor = RouteEditor(viewModelScope, routing) { settings.value }
+
+    fun realLatLon(): LatLon? = settings.value?.lastRealLocation?.let { LatLon(it.lat, it.lon) }
+
+    fun setEditMode(mode: EditMode) {
+        _selected.value = null
+        editor.setMode(mode, realLatLon())
+    }
+
+    /** Temporary Stage 2 playback: constant speed along the edited route. */
+    fun playRoute() {
+        val st = editor.state.value
+        val geometry = st.result?.geometry
+        if (geometry == null || geometry.size < 2 || geometry.lengthM < 1.0) {
+            _message.value = "Draw a route first"
+            return
+        }
+        startWith { alt, _ -> TrajectorySpec.Polyline(geometry, st.playSpeedKmh / 3.6, alt) }
+    }
+
+    fun setRoutingProvider(id: String) = viewModelScope.launch { repo.setRoutingProvider(id) }
+    fun setOrsKey(key: String) = viewModelScope.launch { repo.setOrsApiKey(key) }
+    fun setGraphHopperKey(key: String) = viewModelScope.launch { repo.setGraphHopperApiKey(key) }
+    fun clearRouteCache() = viewModelScope.launch {
+        routeCache.clear()
+        _message.value = "Route cache cleared"
+    }
 
     init {
         viewModelScope.launch {

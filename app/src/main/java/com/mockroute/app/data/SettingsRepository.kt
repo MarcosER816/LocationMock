@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -29,6 +30,11 @@ data class AppSettings(
     /** null = not chosen yet → default ON when Google Play services is present. */
     val gmsMockLayer: Boolean? = null,
     val lastRealLocation: RealFix? = null,
+    /** "ors" | "graphhopper" | "straight". */
+    val routingProvider: String = "ors",
+    /** Keys pasted in Settings; empty → BuildConfig (GitHub secrets). */
+    val orsApiKey: String = "",
+    val graphHopperApiKey: String = "",
 )
 
 class SettingsRepository(private val context: Context) {
@@ -41,6 +47,9 @@ class SettingsRepository(private val context: Context) {
         val realAcc = floatPreferencesKey("last_real_accuracy")
         val realAlt = doublePreferencesKey("last_real_altitude")
         val realTime = longPreferencesKey("last_real_time")
+        val routingProvider = stringPreferencesKey("routing_provider")
+        val orsKey = stringPreferencesKey("ors_api_key")
+        val ghKey = stringPreferencesKey("graphhopper_api_key")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
@@ -52,6 +61,12 @@ class SettingsRepository(private val context: Context) {
     suspend fun setDisclaimerAccepted(ok: Boolean) = context.dataStore.edit { it[Keys.disclaimerAccepted] = ok }
 
     suspend fun setGmsMockLayer(on: Boolean) = context.dataStore.edit { it[Keys.gmsMockLayer] = on }
+
+    suspend fun setRoutingProvider(id: String) = context.dataStore.edit { it[Keys.routingProvider] = id }
+
+    suspend fun setOrsApiKey(key: String) = context.dataStore.edit { it[Keys.orsKey] = key.trim() }
+
+    suspend fun setGraphHopperApiKey(key: String) = context.dataStore.edit { it[Keys.ghKey] = key.trim() }
 
     suspend fun setLastRealLocation(fix: RealFix) = context.dataStore.edit {
         it[Keys.realLat] = fix.lat
@@ -73,6 +88,9 @@ class SettingsRepository(private val context: Context) {
             } else {
                 null
             },
+            routingProvider = this[Keys.routingProvider] ?: "ors",
+            orsApiKey = this[Keys.orsKey] ?: "",
+            graphHopperApiKey = this[Keys.ghKey] ?: "",
         )
     }
 }

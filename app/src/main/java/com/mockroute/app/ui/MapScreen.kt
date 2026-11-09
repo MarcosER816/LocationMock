@@ -31,6 +31,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -50,8 +51,11 @@ import com.mockroute.core.geo.LatLon
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.maplibre.compose.camera.CameraPosition
+import org.maplibre.compose.camera.CameraState
 import org.maplibre.compose.camera.rememberCameraState
 import org.maplibre.compose.expressions.dsl.const
+import org.maplibre.compose.expressions.value.LineCap
+import org.maplibre.compose.expressions.value.LineJoin
 import org.maplibre.compose.layers.CircleLayer
 import org.maplibre.compose.layers.LineLayer
 import org.maplibre.compose.map.MaplibreMap
@@ -66,6 +70,9 @@ import kotlin.time.Duration.Companion.milliseconds
 private val RealBlue = Color(0xFF1A73E8)
 private val MockRed = Color(0xFFD93025)
 private val PickOrange = Color(0xFFF29900)
+private val RouteBlue = Color(0xFF1565C0)
+private val FallbackGrey = Color(0xFF757575)
+private val HandleGreen = Color(0xFF1E8E3E)
 
 @Composable
 fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
@@ -74,7 +81,9 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
     val selected by vm.selected.collectAsStateWithLifecycle()
     val capturing by vm.capturing.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
+    val editor by vm.editor.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+    val editing = editor.mode != EditMode.Explore
 
     val real = settings?.lastRealLocation
     val cameraState = rememberCameraState(
@@ -107,15 +116,65 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             baseStyle = BaseStyle.Uri(TileStyle.chain[styleIndex]),
             cameraState = cameraState,
             onMapLoadFailed = { if (styleIndex < TileStyle.chain.lastIndex) styleIndex++ },
+            onMapClick = { pos, _ ->
+                if (editing) {
+                    vm.editor.onMapTap(LatLon(pos.latitude, pos.longitude))
+                    ClickResult.Consume
+                } else {
+                    ClickResult.Pass
+                }
+            },
             onMapLongClick = { pos, _ ->
-                vm.select(LatLon(pos.latitude, pos.longitude))
+                val p = LatLon(pos.latitude, pos.longitude)
+                if (editing) vm.editor.onMapTap(p) else vm.select(p)
                 ClickResult.Consume
             },
         ) {
-            val walkSpec = sim.spec as? TrajectorySpec.StraightLine
-            val pathSource = rememberGeoJsonSource(
-                GeoJsonData.JsonString(lineJson(walkSpec?.let { listOf(it.from, it.to) } ?: emptyList())),
+            // Route being edited (simplified for display).
+            val editedResult = editor.result
+            val routeJson = remember(editedResult?.geometry) {
+                lineJson(editedResult?.geometry?.simplify(1.0)?.points ?: emptyList())
+            }
+            val routeSource = rememberGeoJsonSource(GeoJsonData.JsonString(routeJson))
+            LineLayer(
+                id = "edited-route-casing",
+                source = routeSource,
+                color = const(Color.White),
+                width = const(8.dp),
+                cap = const(LineCap.Round),
+                join = const(LineJoin.Round),
             )
+            LineLayer(
+                id = "edited-route",
+                source = routeSource,
+                color = const(if (editedResult?.isFallback == true) FallbackGrey else RouteBlue),
+                width = const(5.dp),
+                cap = const(LineCap.Round),
+                join = const(LineJoin.Round),
+            )
+            val waypointSource = rememberGeoJsonSource(
+                GeoJsonData.JsonString(pointsJson(if (editor.mode == EditMode.Streets) editor.waypoints else emptyList())),
+            )
+            CircleLayer(
+                id = "street-waypoints",
+                source = waypointSource,
+                color = const(RouteBlue),
+                radius = const(6.dp),
+                strokeColor = const(Color.White),
+                strokeWidth = const(2.dp),
+            )
+
+            // Path of the running simulation.
+            val playingJson = remember(sim.spec) {
+                lineJson(
+                    when (val spec = sim.spec) {
+                        is TrajectorySpec.StraightLine -> listOf(spec.from, spec.to)
+                        is TrajectorySpec.Polyline -> spec.geometry.simplify(1.0).points
+                        else -> emptyList()
+                    },
+                )
+            }
+            val pathSource = rememberGeoJsonSource(GeoJsonData.JsonString(playingJson))
             LineLayer(
                 id = "walk-path",
                 source = pathSource,
@@ -154,11 +213,24 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             )
         }
 
-        // Top-right controls.
+        // Draggable A/B handles (point-to-point), drawn as Compose overlays on top of the map.
+        if (editor.mode == EditMode.PointToPoint) {
+            EndpointHandles(editor.a, editor.b, cameraState) { which, p -> vm.editor.setEndpoint(which, p) }
+        }
+
+        // Top: mode toolbar, then the round buttons.
         Column(
-            Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp),
+            Modifier.align(Alignment.TopCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.End,
         ) {
+            ModeToolbar(editor.mode, editor.snap, onMode = vm::setEditMode, onFreeDraw = {
+                vm.setEditMode(EditMode.Streets)
+                vm.editor.setSnap(false)
+            }, onStreets = {
+                vm.setEditMode(EditMode.Streets)
+                vm.editor.setSnap(true)
+            })
             SmallFloatingActionButton(onClick = onOpenSettings) {
                 Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings")
             }
@@ -200,18 +272,34 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             if (sim.isActive) {
                 SimulationCard(
                     status = sim.status,
-                    label = if (sim.finished && sim.spec is TrajectorySpec.StraightLine) "Arrived" else sim.spec?.label ?: "",
+                    label = if (sim.finished && sim.spec !is TrajectorySpec.Static) "Arrived" else sim.spec?.label ?: "",
                     speedKmh = Units.msToKmh(sim.current?.speedMps ?: 0.0),
                     point = sim.current?.position,
-                    remainingM = (sim.spec as? TrajectorySpec.StraightLine)?.let { s ->
-                        sim.current?.let { GeoMath.haversineMeters(it.position, s.to) }
+                    remainingM = when (val spec = sim.spec) {
+                        is TrajectorySpec.StraightLine -> sim.current?.let { GeoMath.haversineMeters(it.position, spec.to) }
+                        is TrajectorySpec.Polyline -> (spec.geometry.lengthM - sim.elapsedSeconds * spec.speedMps).coerceAtLeast(0.0)
+                        else -> null
                     },
                     onPause = vm::pause,
                     onResume = vm::resume,
                     onStop = vm::stop,
                 )
             }
-            selected?.let { p ->
+            if (editing && !sim.isActive) {
+                SegmentSheet(
+                    state = editor,
+                    onProfile = vm.editor::setProfile,
+                    onUndo = vm.editor::undo,
+                    onClear = vm.editor::clear,
+                    onSnap = vm.editor::setSnap,
+                    onPick = vm.editor::pickNext,
+                    onUseRealA = { vm.editor.useRealLocationAsA(vm.realLatLon()) },
+                    onStartAtReal = { vm.realLatLon()?.let(vm.editor::addWaypoint) },
+                    onSpeed = vm.editor::setPlaySpeed,
+                    onPlay = vm::playRoute,
+                )
+            }
+            selected?.takeIf { !editing }?.let { p ->
                 PointSheet(
                     point = p,
                     distanceFromM = (sim.current?.position ?: real?.let { LatLon(it.lat, it.lon) })
@@ -233,6 +321,16 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             )
         }
     }
+}
+
+/** Isolated so camera-driven recomposition stays inside this small scope. */
+@Composable
+private fun EndpointHandles(a: LatLon?, b: LatLon?, cameraState: CameraState, onMoved: (Endpoint, LatLon) -> Unit) {
+    val projection = cameraState.projection ?: return
+    @Suppress("UNUSED_VARIABLE")
+    val cameraTick = cameraState.position // re-place handles whenever the camera moves
+    a?.let { p -> DragHandle("A", p, HandleGreen, projection) { onMoved(Endpoint.A, it) } }
+    b?.let { p -> DragHandle("B", p, MockRed, projection) { onMoved(Endpoint.B, it) } }
 }
 
 @Composable
@@ -316,11 +414,11 @@ private fun SimulationCard(
     }
 }
 
-private fun formatDistance(m: Double): String =
+internal fun formatDistance(m: Double): String =
     if (m < 1000) String.format(Locale.US, "%.0f m", m) else String.format(Locale.US, "%.2f km", m / 1000)
 
 /** h:mm (UI convention), or m:ss under an hour. */
-private fun formatDuration(seconds: Double): String {
+internal fun formatDuration(seconds: Double): String {
     val s = seconds.toLong()
     return if (s >= 3600) String.format(Locale.US, "%d:%02d h", s / 3600, (s % 3600) / 60)
     else String.format(Locale.US, "%d:%02d min", s / 60, s % 60)
@@ -335,5 +433,11 @@ private fun lineJson(points: List<LatLon>): String =
     else """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[${
         points.joinToString(",") { "[${it.lon},${it.lat}]" }
     }]}}]}"""
+
+private fun pointsJson(points: List<LatLon>): String =
+    if (points.isEmpty()) EMPTY_FC
+    else """{"type":"FeatureCollection","features":[${
+        points.joinToString(",") { """{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[${it.lon},${it.lat}]}}""" }
+    }]}"""
 
 private const val EMPTY_FC = """{"type":"FeatureCollection","features":[]}"""

@@ -224,7 +224,7 @@ class MockLocationService : Service() {
     ): Notification {
         val title = when {
             status == SimStatus.Paused -> "Paused"
-            finished && spec is TrajectorySpec.StraightLine -> "Arrived"
+            finished && spec !is TrajectorySpec.Static -> "Arrived"
             else -> spec?.label ?: "Simulating"
         }
         val speedKmh = Units.msToKmh(state?.speedMps ?: 0.0)
