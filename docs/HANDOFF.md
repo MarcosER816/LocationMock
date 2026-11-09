@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-09 — Stage 2 (routing & tracing) — verified on device (handle-follow fix pending re-check). Stage 1 verified on device._
+_Last updated: 2026-11-09 — Stage 2 (routing & tracing) — 0.2.1 fixes pending phone re-check. Stage 1 verified on device._
 
 ## Done
 ### Stage 2 — routing & tracing
@@ -168,13 +168,32 @@ list of `LatLon`.
 - Lint: 0 errors; warnings are cosmetic (Timber, `toUri`, targetSdk 37 available).
 
 ## Known issues (Stage 2)
-- **2026-11-09 phone test: everything works (ORS routing, streets, undo, free draw, playback in Google Maps)**,
-  except that the A/B handles stayed fixed on screen while the map was panned or zoomed. **Fixed** in the next build:
-  `DragHandle` computed its screen position during composition, and Compose skipped it because its inputs didn't
-  change during a pan. The position is now computed in the layout-phase `Modifier.offset {}` lambda, which reads
-  `cameraState.position`, so it re-places on every camera frame. Lesson for future overlays: **read the camera
-  state in layout/draw lambdas, not in composition.** Re-check: pan/zoom with A/B set; the handles must stay on
-  their streets.
+- **2026-11-09 phone test, round 1:** routing, streets, undo, free draw and playback in Google Maps all work, but:
+  1. **The A/B handles stayed fixed on screen while the map moved.** The first attempt (0.2.0+, computing the
+     overlay position in `Modifier.offset {}`) did not fix it on the device. **0.2.1 removes the Compose overlays
+     entirely:** A/B are now drawn as **map layers** (`EndpointLayers`: CircleLayer + SymbolLayer label with font
+     "Noto Sans Bold" from the liberty style), so they are geographically pinned by MapLibre itself. Dragging is done
+     by `Modifier.endpointDrag` on the Box that contains the map. It runs in `PointerEventPass.Initial` (parents
+     before children). On each touch-down it computes A/B screen positions *fresh* from the projection; if the touch
+     is within 36 dp it consumes the gesture, and Compose's `PointerInteropFilter` then stops dispatching it to the
+     MapLibre AndroidView, so the map doesn't pan. Otherwise it doesn't touch the event. Verified against the
+     Compose 1.11.4 `PointerInteropFilter` source. **Rule for later stages: never place Compose views over the map
+     for geo-anchored things; use map layers.**
+  2. **The built-in key (GitHub secret) didn't work; the key had to be pasted in Settings, and after reopening the
+     app routing only worked after visiting Settings.** CI shows the secret is present (`ORS_API_KEY: ***`). Likely
+     cause: the secret value has surrounding whitespace/quotes (common when pasting on a phone). ORS rejects such
+     a key with 403, which gives a straight-line fallback, and nothing retried it. Fixes in 0.2.1:
+     - Gradle trims whitespace/quotes from secrets and logs `API key ORS_API_KEY: present, N chars (removed …)`
+       (no key content). **Check that line in the CI log.**
+     - The app trims keys too. Settings key fields **save as you type** (the old Save button was easy to miss, which
+       explains "had to set it again after reopening"). The status line shows which key is used
+       (`saved on phone` / `built-in`, length, last 4 chars).
+     - **Auto re-route:** when the provider or a key changes (debounced 800 ms), the editor re-routes the P2P
+       route and any fallback legs (`RouteEditor.refresh()`). A **Retry** button sits next to every fallback notice.
+       Network errors retry once after 1.5 s (`RoutingService.routeWithRetry`).
+     - **Settings → Test routing** makes one 400 m walking request with the current key and shows the exact result
+       or error.
+     - **Build identity** in Settings → About: `0.2.1 (build <CI run #>, <git sha>)` confirms which APK is installed.
 - The ORS/GraphHopper fixtures in `core/src/test/resources/fixtures` are hand-built from the documented formats
   (no key in the agent sandbox). Error bodies were checked against the live APIs. If a real response ever fails to
   parse, save it as a new fixture.
@@ -190,6 +209,17 @@ list of `LatLon`.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
 - Verified 2026-11-09 in sandbox: `:core:test` 24/24 passed; `:app:lintDebug` 0 errors; `:app:assembleDebug` OK.
+
+## Re-check for 0.2.1 (do first)
+1. Settings → About shows **0.2.1 (build N, sha)**. N should match the latest green Actions run.
+2. Settings → Routing: **clear the ORS key field** (to test the built-in key). The status line says
+   "Using key built-in (GitHub secret): N chars, …abcd". Tap **Test routing**: it should say "OK — ors: … route".
+   If it shows a 403 message, the GitHub secret value is wrong: re-create it (paste only the key) or just paste the
+   key in the field (it is saved immediately).
+3. Close MockRoute from Recents, reopen it, go to A → B and set B: the route follows the streets straight away.
+4. With A and B set, **pan, zoom and rotate**: A and B stay on their streets.
+5. **Drag** A and B: the map doesn't pan while you drag a marker, and it re-routes when you lift your finger.
+   Dragging anywhere else pans the map as normal.
 
 ## How to verify on phone (Stage 2 test script)
 Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in Settings → Routing.

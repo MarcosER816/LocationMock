@@ -13,11 +13,22 @@ val localProps = Properties().apply {
 }
 
 fun apiKey(name: String): String {
-    val value = System.getenv(name)?.takeIf { it.isNotBlank() }
+    val raw = System.getenv(name)?.takeIf { it.isNotBlank() }
         ?: localProps.getProperty(name)?.takeIf { it.isNotBlank() }
         ?: ""
+    // Keys pasted on a phone often carry a trailing space/newline or quotes: strip them.
+    val value = raw.trim().trim('"', '\'').trim()
+    // Diagnostics without revealing the key: presence, length, whether cleanup changed anything.
+    logger.lifecycle(
+        "API key $name: " + if (value.isEmpty()) "absent" else "present, ${value.length} chars" +
+            (if (value != raw) " (removed surrounding whitespace/quotes)" else ""),
+    )
     return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 }
+
+// Build identity shown in Settings, so the installed APK can be matched to a CI run.
+val gitSha: String = (System.getenv("GITHUB_SHA") ?: "local").take(7)
+val ciRun: String = System.getenv("GITHUB_RUN_NUMBER") ?: "-"
 
 android {
     namespace = "com.mockroute.app"
@@ -27,8 +38,8 @@ android {
         applicationId = "com.mockroute.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 3
-        versionName = "0.2.0"
+        versionCode = 4
+        versionName = "0.2.1"
 
         // Target phone (POCO F7 Ultra) is arm64; skipping other ABIs cuts the APK from ~75 MB to ~25 MB.
         ndk { abiFilters += listOf("arm64-v8a") }
@@ -37,6 +48,8 @@ android {
         buildConfigField("String", "TOMTOM_API_KEY", apiKey("TOMTOM_API_KEY"))
         buildConfigField("String", "GRAPHHOPPER_API_KEY", apiKey("GRAPHHOPPER_API_KEY"))
         buildConfigField("String", "GOOGLE_ROUTES_API_KEY", apiKey("GOOGLE_ROUTES_API_KEY"))
+        buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
+        buildConfigField("String", "CI_RUN", "\"$ciRun\"")
     }
 
     signingConfigs {

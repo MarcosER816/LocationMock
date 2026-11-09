@@ -85,63 +85,6 @@ fun ModeToolbar(
     }
 }
 
-/**
- * A labelled circle pinned to [point] that can be dragged; [onMoved] fires once on release.
- *
- * The screen position is computed inside the layout-phase `offset {}` lambda, which reads
- * [CameraState.position]: every camera move re-places the handle without recomposition. (Computing it during
- * composition doesn't work: the handle's inputs don't change while the map pans, so Compose skips it and the
- * handle stays glued to the screen.)
- */
-@Composable
-fun DragHandle(label: String, point: LatLon, color: Color, cameraState: CameraState, onMoved: (LatLon) -> Unit) {
-    val density = LocalDensity.current
-    // Screen position while a drag is in progress; null = follow the map.
-    var drag by remember(point) { mutableStateOf<DpOffset?>(null) }
-    val size = 34.dp
-
-    fun anchor(): DpOffset? {
-        drag?.let { return it }
-        @Suppress("UNUSED_VARIABLE")
-        val cameraRead = cameraState.position // snapshot read → re-layout on camera move
-        return cameraState.projection?.screenLocationFromPosition(Position(point.lon, point.lat))
-    }
-
-    Box(
-        Modifier
-            .offset {
-                val a = anchor() ?: return@offset IntOffset(-10_000, -10_000)
-                IntOffset((a.x - size / 2).roundToPx(), (a.y - size / 2).roundToPx())
-            }
-            .size(size)
-            .background(color, CircleShape)
-            .border(3.dp, Color.White, CircleShape)
-            .pointerInput(point) {
-                detectDragGestures(
-                    onDragStart = { drag = anchor() },
-                    onDragEnd = {
-                        val d = drag
-                        val projection = cameraState.projection
-                        if (d != null && projection != null) {
-                            val pos = projection.positionFromScreenLocation(d)
-                            onMoved(LatLon(pos.latitude.coerceIn(-85.0, 85.0), pos.longitude))
-                        } else {
-                            drag = null
-                        }
-                    },
-                    onDragCancel = { drag = null },
-                ) { change, amount ->
-                    change.consume()
-                    val cur = drag ?: return@detectDragGestures
-                    drag = with(density) { DpOffset(cur.x + amount.x.toDp(), cur.y + amount.y.toDp()) }
-                }
-            },
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, color = Color.White, fontWeight = FontWeight.Bold)
-    }
-}
-
 @Composable
 fun SegmentSheet(
     state: RouteEditorState,
@@ -154,6 +97,7 @@ fun SegmentSheet(
     onStartAtReal: () -> Unit,
     onSpeed: (Double) -> Unit,
     onPlay: () -> Unit,
+    onRetry: () -> Unit,
 ) {
     val result = state.result
     Card(
@@ -181,7 +125,10 @@ fun SegmentSheet(
                 if (state.loading) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             }
             result?.notice?.let {
-                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(it, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = onRetry, enabled = !state.loading) { Text("Retry") }
+                }
             }
 
             // Profile.

@@ -7,7 +7,7 @@ Tick a stage (`[x]`) only when its acceptance checks pass and CI is green. Detai
 - [x] **Stage 1 — Map + mock service MVP.** _(CI green; phone test script passed on POCO F7 Ultra 2026-11-09)_ MapLibre + OpenFreeMap map showing the real location; manifest
   permissions; `MockLocationService` (foreground, test providers gps/network/fused, startup cleaner); start/stop from
   UI; mock a fixed point; "not selected as mock app" explanation + deep link; one-time disclaimer.
-- [x] **Stage 2 — Routing & tracing.** _(phone-tested 2026-11-09; A/B pan fix in HANDOFF.md)_ `RoutingProvider` (ORS default, GraphHopper alt), point-to-point best route,
+- [x] **Stage 2 — Routing & tracing.** _(phone-tested 2026-11-09; 0.2.1 marker/key fixes pending re-check — see HANDOFF.md)_ `RoutingProvider` (ORS default, GraphHopper alt), point-to-point best route,
   street-by-street tracing snapped to roads, straight-line/hand-drawn fallback with no keys; response caching.
 - [ ] **Stage 3 — Distributions + feasibility UI.** Truncated gamma for speed/time; v_min/v_max, t_min/t_max, a_max
   presets (Walk/Car/Bus); feasibility rules; coupled (v_max, t_max) double slider.

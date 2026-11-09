@@ -21,11 +21,17 @@ import com.mockroute.app.sim.TrajectorySpec
 import com.mockroute.core.geo.LatLon
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+@OptIn(kotlinx.coroutines.FlowPreview::class)
 class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = (app as MockRouteApp).settings
     private val reader = RealLocationReader(app)
@@ -80,12 +86,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setRoutingProvider(id: String) = viewModelScope.launch { repo.setRoutingProvider(id) }
     fun setOrsKey(key: String) = viewModelScope.launch { repo.setOrsApiKey(key) }
     fun setGraphHopperKey(key: String) = viewModelScope.launch { repo.setGraphHopperApiKey(key) }
+    private val _routingTest = MutableStateFlow<String?>(null)
+    val routingTest: StateFlow<String?> = _routingTest.asStateFlow()
+
+    /** Settings → Test routing: one short request with the current provider/key, showing the exact outcome. */
+    fun testRouting() = viewModelScope.launch {
+        val s = settings.value ?: return@launch
+        val start = realLatLon() ?: LatLon(49.41461, 8.681495)
+        val end = com.mockroute.core.geo.GeoMath.destination(start, 45.0, 400.0)
+        _routingTest.value = "Testing…"
+        _routingTest.value = try {
+            val r = routing.test(listOf(start, end), com.mockroute.core.route.RoutingProfile.Walk, s)
+            "OK — ${r.providerId}: ${formatDistance(r.distanceM)} route, ${r.geometry.size} points"
+        } catch (e: com.mockroute.core.route.RoutingException) {
+            e.userMessage
+        } catch (e: Exception) {
+            "Failed: ${e.javaClass.simpleName} ${e.message ?: ""}"
+        }
+    }
+
+    fun keySource(saved: String, builtIn: String): String {
+        val k = saved.trim().ifBlank { builtIn.trim() }
+        val src = if (saved.isNotBlank()) "saved on phone" else if (builtIn.isNotBlank()) "built-in (GitHub secret)" else "none"
+        return if (k.isEmpty()) "No key" else "Using key $src: ${k.length} chars, …${k.takeLast(4)}"
+    }
+
     fun clearRouteCache() = viewModelScope.launch {
         routeCache.clear()
         _message.value = "Route cache cleared"
     }
 
     init {
+        // Re-route fallback routes as soon as the provider or an API key changes (no need to re-open screens).
+        viewModelScope.launch {
+            settings.filterNotNull()
+                .map { routing.configSignature(it) }
+                .distinctUntilChanged()
+                .drop(1)
+                .debounce(800) // typing a key changes it on every keystroke
+                .collect { editor.refresh() }
+        }
         viewModelScope.launch {
             SimulationRepository.state.collect { s ->
                 if (s.error != null) {

@@ -41,6 +41,8 @@ data class RouteEditorState(
     val waypoints: List<LatLon> = emptyList(),
     val legs: List<Leg> = emptyList(),
     val playSpeedKmh: Double = defaultSpeedKmh(RoutingProfile.Walk),
+    /** Bumped to force point-to-point re-routing (settings changed / Retry). */
+    val revision: Int = 0,
 ) {
     val loading: Boolean get() = if (mode == EditMode.PointToPoint) p2pLoading else legs.any { it.result == null }
 
@@ -78,11 +80,14 @@ class RouteEditor(
     init {
         // Debounced point-to-point routing.
         scope.launch {
-            _state.map { Triple(it.a, it.b, it.profile) to (it.mode == EditMode.PointToPoint) }
+            _state.map { listOf(it.a, it.b, it.profile, it.revision) to (it.mode == EditMode.PointToPoint) }
                 .distinctUntilChanged()
                 .debounce(DEBOUNCE_MS)
-                .collectLatest { (req, active) ->
-                    val (a, b, profile) = req
+                .collectLatest { (_, active) ->
+                    val snapshot = _state.value
+                    val a = snapshot.a
+                    val b = snapshot.b
+                    val profile = snapshot.profile
                     if (!active || a == null || b == null) {
                         _state.update { it.copy(p2pResult = null, p2pLoading = false) }
                         return@collectLatest
@@ -173,6 +178,17 @@ class RouteEditor(
                 else s.copy(legs = s.legs.toMutableList().also { it[index] = cur.copy(result = r) })
             }
             legJobs.remove(index)
+        }
+    }
+
+    /**
+     * Re-routes whatever currently fell back to a straight line (after a key/provider change, or Retry).
+     * Successful routes are kept (and are cached anyway).
+     */
+    fun refresh() {
+        _state.update { it.copy(revision = it.revision + 1) }
+        _state.value.legs.forEachIndexed { i, leg ->
+            if (leg.snap && (leg.result == null || leg.result.isFallback)) routeLeg(i)
         }
     }
 

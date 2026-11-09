@@ -57,17 +57,22 @@ private fun RoutingSettings(vm: MainViewModel) {
         }
     }
     KeyField(
-        label = "OpenRouteService API key",
-        value = s.orsApiKey,
-        builtIn = BuildConfig.ORS_API_KEY.isNotBlank(),
-        onSave = vm::setOrsKey,
+        label = "OpenRouteService API key (optional)",
+        initial = s.orsApiKey,
+        status = vm.keySource(s.orsApiKey, BuildConfig.ORS_API_KEY),
+        onChange = vm::setOrsKey,
     )
     KeyField(
-        label = "GraphHopper API key",
-        value = s.graphHopperApiKey,
-        builtIn = BuildConfig.GRAPHHOPPER_API_KEY.isNotBlank(),
-        onSave = vm::setGraphHopperKey,
+        label = "GraphHopper API key (optional)",
+        initial = s.graphHopperApiKey,
+        status = vm.keySource(s.graphHopperApiKey, BuildConfig.GRAPHHOPPER_API_KEY),
+        onChange = vm::setGraphHopperKey,
     )
+    val test by vm.routingTest.collectAsStateWithLifecycle()
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        OutlinedButton(onClick = vm::testRouting) { Text("Test routing") }
+        test?.let { Text(it, Modifier.padding(start = 12.dp), style = MaterialTheme.typography.bodySmall) }
+    }
     Text(
         "OpenRouteService (HeiGIT, api.heigit.org): free key at openrouteservice.org — ~2,000 directions/day, " +
             "40/min. GraphHopper free: 500 credits/day, non-commercial. Without a key MockRoute draws straight lines. " +
@@ -77,31 +82,24 @@ private fun RoutingSettings(vm: MainViewModel) {
     OutlinedButton(onClick = vm::clearRouteCache) { Text("Clear route cache (${vm.routeCache.entryCount()})") }
 }
 
+/** Saved as you type (no Save button to forget); an empty field means "use the built-in key". */
 @Composable
-private fun KeyField(label: String, value: String, builtIn: Boolean, onSave: (String) -> Unit) {
-    var text by rememberSaveable(value) { mutableStateOf(value) }
+private fun KeyField(label: String, initial: String, status: String, onChange: (String) -> Unit) {
+    var text by rememberSaveable { mutableStateOf(initial) }
     var visible by rememberSaveable { mutableStateOf(false) }
     OutlinedTextField(
         value = text,
-        onValueChange = { text = it },
+        onValueChange = {
+            text = it
+            onChange(it)
+        },
         label = { Text(label) },
         singleLine = true,
         visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
-        supportingText = {
-            Text(
-                when {
-                    value.isNotBlank() -> "Using the key saved on this phone"
-                    builtIn -> "Empty: using the key built in from GitHub secrets"
-                    else -> "No key: straight-line fallback"
-                },
-            )
-        },
+        supportingText = { Text(status) },
         trailingIcon = { TextButton(onClick = { visible = !visible }) { Text(if (visible) "Hide" else "Show") } },
         modifier = Modifier.fillMaxWidth(),
     )
-    if (text != value) {
-        Button(onClick = { onSave(text) }) { Text("Save key") }
-    }
 }
 
 @Composable
@@ -158,7 +156,7 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onCheckSetup: () -> Un
             HorizontalDivider()
             Text("About", style = MaterialTheme.typography.titleMedium)
             Text(
-                "MockRoute ${BuildConfig.VERSION_NAME}\nMap: ${TileStyle.ATTRIBUTION}\n\n$DISCLAIMER_TEXT",
+                "MockRoute ${BuildConfig.VERSION_NAME} (build ${BuildConfig.CI_RUN}, ${BuildConfig.GIT_SHA})\nMap: ${TileStyle.ATTRIBUTION}\n\n$DISCLAIMER_TEXT",
                 style = MaterialTheme.typography.bodySmall,
             )
         }

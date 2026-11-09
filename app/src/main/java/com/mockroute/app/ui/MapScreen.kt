@@ -58,6 +58,10 @@ import org.maplibre.compose.expressions.value.LineCap
 import org.maplibre.compose.expressions.value.LineJoin
 import org.maplibre.compose.layers.CircleLayer
 import org.maplibre.compose.layers.LineLayer
+import org.maplibre.compose.layers.SymbolLayer
+import org.maplibre.compose.expressions.dsl.format
+import org.maplibre.compose.expressions.dsl.span
+import androidx.compose.ui.unit.em
 import org.maplibre.compose.map.MaplibreMap
 import org.maplibre.compose.sources.GeoJsonData
 import org.maplibre.compose.sources.rememberGeoJsonSource
@@ -110,7 +114,23 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
         }
     }
 
-    Box(Modifier.fillMaxSize()) {
+    // While dragging A/B we show the finger position; the editor is updated once on release.
+    var dragPreview by remember { mutableStateOf<Pair<Endpoint, LatLon>?>(null) }
+    val shownA = dragPreview?.takeIf { it.first == Endpoint.A }?.second ?: editor.a
+    val shownB = dragPreview?.takeIf { it.first == Endpoint.B }?.second ?: editor.b
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .endpointDrag(
+                enabled = editor.mode == EditMode.PointToPoint,
+                cameraState = cameraState,
+                a = editor.a,
+                b = editor.b,
+                onPreview = { dragPreview = it },
+                onMoved = { which, p -> vm.editor.setEndpoint(which, p) },
+            ),
+    ) {
         MaplibreMap(
             modifier = Modifier.fillMaxSize(),
             baseStyle = BaseStyle.Uri(TileStyle.chain[styleIndex]),
@@ -202,6 +222,11 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
                 strokeColor = const(Color.White),
                 strokeWidth = const(3.dp),
             )
+            // A/B endpoints as real map layers: always pinned to their coordinates.
+            val p2p = editor.mode == EditMode.PointToPoint
+            EndpointLayers("a", if (p2p) shownA else null, "A", HandleGreen)
+            EndpointLayers("b", if (p2p) shownB else null, "B", MockRed)
+
             val mockSource = rememberGeoJsonSource(GeoJsonData.JsonString(pointJson(sim.current?.position)))
             CircleLayer(
                 id = "mock-location",
@@ -211,11 +236,6 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
                 strokeColor = const(Color.White),
                 strokeWidth = const(2.dp),
             )
-        }
-
-        // Draggable A/B handles (point-to-point), drawn as Compose overlays on top of the map.
-        if (editor.mode == EditMode.PointToPoint) {
-            EndpointHandles(editor.a, editor.b, cameraState) { which, p -> vm.editor.setEndpoint(which, p) }
         }
 
         // Top: mode toolbar, then the round buttons.
@@ -297,6 +317,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
                     onStartAtReal = { vm.realLatLon()?.let(vm.editor::addWaypoint) },
                     onSpeed = vm.editor::setPlaySpeed,
                     onPlay = vm::playRoute,
+                    onRetry = vm.editor::refresh,
                 )
             }
             selected?.takeIf { !editing }?.let { p ->
@@ -324,9 +345,26 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
 }
 
 @Composable
-private fun EndpointHandles(a: LatLon?, b: LatLon?, cameraState: CameraState, onMoved: (Endpoint, LatLon) -> Unit) {
-    a?.let { p -> DragHandle("A", p, HandleGreen, cameraState) { onMoved(Endpoint.A, it) } }
-    b?.let { p -> DragHandle("B", p, MockRed, cameraState) { onMoved(Endpoint.B, it) } }
+private fun EndpointLayers(id: String, point: LatLon?, label: String, color: Color) {
+    val source = rememberGeoJsonSource(GeoJsonData.JsonString(pointJson(point)))
+    CircleLayer(
+        id = "endpoint-$id",
+        source = source,
+        color = const(color),
+        radius = const(15.dp),
+        strokeColor = const(Color.White),
+        strokeWidth = const(3.dp),
+    )
+    SymbolLayer(
+        id = "endpoint-$id-label",
+        source = source,
+        textField = format(span(const(label))),
+        textFont = const(listOf("Noto Sans Bold")),
+        textSize = const(1.1.em),
+        textColor = const(Color.White),
+        textAllowOverlap = const(true),
+        textIgnorePlacement = const(true),
+    )
 }
 
 @Composable
