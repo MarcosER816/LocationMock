@@ -27,8 +27,11 @@ android {
         applicationId = "com.mockroute.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = 2
+        versionName = "0.1.0"
+
+        // Target phone (POCO F7 Ultra) is arm64; skipping other ABIs cuts the APK from ~75 MB to ~25 MB.
+        ndk { abiFilters += listOf("arm64-v8a") }
 
         buildConfigField("String", "ORS_API_KEY", apiKey("ORS_API_KEY"))
         buildConfigField("String", "TOMTOM_API_KEY", apiKey("TOMTOM_API_KEY"))
@@ -79,5 +82,13 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.kotlinx.coroutines.play.services)
+    implementation(libs.play.services.location)
+    // MapLibre Compose 0.14 bundles the MapLibre Native Android (OpenGL) runtime: no extra render artifact needed.
+    implementation(libs.maplibre.compose)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
