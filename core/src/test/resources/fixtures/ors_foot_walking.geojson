@@ -1,0 +1,42 @@
+{
+  "type": "FeatureCollection",
+  "bbox": [8.681423, 49.414554, 8.690123, 49.420318],
+  "features": [
+    {
+      "bbox": [8.681423, 49.414554, 8.690123, 49.420318],
+      "type": "Feature",
+      "properties": {
+        "segments": [{ "distance": 1032.6, "duration": 743.5 }],
+        "extras": {
+          "waytype": {
+            "values": [[0, 3, 3], [3, 6, 7], [6, 8, 3]],
+            "summary": [{ "value": 3.0, "distance": 700.1, "amount": 67.8 }, { "value": 7.0, "distance": 332.5, "amount": 32.2 }]
+          }
+        },
+        "way_points": [0, 8],
+        "summary": { "distance": 1032.6, "duration": 743.5 }
+      },
+      "geometry": {
+        "coordinates": [
+          [8.681495, 49.41461],
+          [8.682421, 49.414554],
+          [8.684039, 49.414612],
+          [8.685234, 49.415491],
+          [8.686102, 49.416633],
+          [8.686821, 49.417710],
+          [8.687402, 49.418824],
+          [8.688012, 49.419611],
+          [8.687872, 49.420318]
+        ],
+        "type": "LineString"
+      }
+    }
+  ],
+  "metadata": {
+    "attribution": "openrouteservice.org | OpenStreetMap contributors",
+    "service": "routing",
+    "timestamp": 1762729200000,
+    "query": { "coordinates": [[8.681495, 49.41461], [8.687872, 49.420318]], "profile": "foot-walking", "format": "geojson" },
+    "engine": { "version": "9.5.0", "build_date": "2026-10-01T00:00:00Z", "graph_date": "2026-10-20T00:00:00Z" }
+  }
+}
