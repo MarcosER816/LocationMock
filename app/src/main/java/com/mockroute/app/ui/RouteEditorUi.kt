@@ -44,7 +44,7 @@ import androidx.compose.ui.unit.dp
 import com.mockroute.app.net.RoutingChoice
 import com.mockroute.core.geo.LatLon
 import com.mockroute.core.route.RoutingProfile
-import org.maplibre.compose.camera.CameraProjection
+import org.maplibre.compose.camera.CameraState
 import org.maplibre.spatialk.geojson.Position
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -85,31 +85,54 @@ fun ModeToolbar(
     }
 }
 
-/** A labelled circle pinned to [point] that can be dragged; [onMoved] fires once on release. */
+/**
+ * A labelled circle pinned to [point] that can be dragged; [onMoved] fires once on release.
+ *
+ * The screen position is computed inside the layout-phase `offset {}` lambda, which reads
+ * [CameraState.position]: every camera move re-places the handle without recomposition. (Computing it during
+ * composition doesn't work: the handle's inputs don't change while the map pans, so Compose skips it and the
+ * handle stays glued to the screen.)
+ */
 @Composable
-fun DragHandle(label: String, point: LatLon, color: Color, projection: CameraProjection, onMoved: (LatLon) -> Unit) {
+fun DragHandle(label: String, point: LatLon, color: Color, cameraState: CameraState, onMoved: (LatLon) -> Unit) {
     val density = LocalDensity.current
+    // Screen position while a drag is in progress; null = follow the map.
     var drag by remember(point) { mutableStateOf<DpOffset?>(null) }
-    val anchor = drag ?: projection.screenLocationFromPosition(Position(point.lon, point.lat))
     val size = 34.dp
+
+    fun anchor(): DpOffset? {
+        drag?.let { return it }
+        @Suppress("UNUSED_VARIABLE")
+        val cameraRead = cameraState.position // snapshot read → re-layout on camera move
+        return cameraState.projection?.screenLocationFromPosition(Position(point.lon, point.lat))
+    }
+
     Box(
         Modifier
-            .offset { IntOffset((anchor.x - size / 2).roundToPx(), (anchor.y - size / 2).roundToPx()) }
+            .offset {
+                val a = anchor() ?: return@offset IntOffset(-10_000, -10_000)
+                IntOffset((a.x - size / 2).roundToPx(), (a.y - size / 2).roundToPx())
+            }
             .size(size)
             .background(color, CircleShape)
             .border(3.dp, Color.White, CircleShape)
             .pointerInput(point) {
                 detectDragGestures(
+                    onDragStart = { drag = anchor() },
                     onDragEnd = {
-                        drag?.let { d ->
+                        val d = drag
+                        val projection = cameraState.projection
+                        if (d != null && projection != null) {
                             val pos = projection.positionFromScreenLocation(d)
                             onMoved(LatLon(pos.latitude.coerceIn(-85.0, 85.0), pos.longitude))
+                        } else {
+                            drag = null
                         }
                     },
                     onDragCancel = { drag = null },
                 ) { change, amount ->
                     change.consume()
-                    val cur = drag ?: anchor
+                    val cur = drag ?: return@detectDragGestures
                     drag = with(density) { DpOffset(cur.x + amount.x.toDp(), cur.y + amount.y.toDp()) }
                 }
             },

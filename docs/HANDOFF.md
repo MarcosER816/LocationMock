@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-09 — Stage 2 (routing & tracing) — built, CI; awaiting phone test. Stage 1 verified on device._
+_Last updated: 2026-11-09 — Stage 2 (routing & tracing) — verified on device (handle-follow fix pending re-check). Stage 1 verified on device._
 
 ## Done
 ### Stage 2 — routing & tracing
@@ -168,6 +168,13 @@ list of `LatLon`.
 - Lint: 0 errors; warnings are cosmetic (Timber, `toUri`, targetSdk 37 available).
 
 ## Known issues (Stage 2)
+- **2026-11-09 phone test: everything works (ORS routing, streets, undo, free draw, playback in Google Maps)**,
+  except that the A/B handles stayed fixed on screen while the map was panned or zoomed. **Fixed** in the next build:
+  `DragHandle` computed its screen position during composition, and Compose skipped it because its inputs didn't
+  change during a pan. The position is now computed in the layout-phase `Modifier.offset {}` lambda, which reads
+  `cameraState.position`, so it re-places on every camera frame. Lesson for future overlays: **read the camera
+  state in layout/draw lambdas, not in composition.** Re-check: pan/zoom with A/B set; the handles must stay on
+  their streets.
 - The ORS/GraphHopper fixtures in `core/src/test/resources/fixtures` are hand-built from the documented formats
   (no key in the agent sandbox). Error bodies were checked against the live APIs. If a real response ever fails to
   parse, save it as a new fixture.

@@ -323,14 +323,10 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
     }
 }
 
-/** Isolated so camera-driven recomposition stays inside this small scope. */
 @Composable
 private fun EndpointHandles(a: LatLon?, b: LatLon?, cameraState: CameraState, onMoved: (Endpoint, LatLon) -> Unit) {
-    val projection = cameraState.projection ?: return
-    @Suppress("UNUSED_VARIABLE")
-    val cameraTick = cameraState.position // re-place handles whenever the camera moves
-    a?.let { p -> DragHandle("A", p, HandleGreen, projection) { onMoved(Endpoint.A, it) } }
-    b?.let { p -> DragHandle("B", p, MockRed, projection) { onMoved(Endpoint.B, it) } }
+    a?.let { p -> DragHandle("A", p, HandleGreen, cameraState) { onMoved(Endpoint.A, it) } }
+    b?.let { p -> DragHandle("B", p, MockRed, cameraState) { onMoved(Endpoint.B, it) } }
 }
 
 @Composable
