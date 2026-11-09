@@ -4,7 +4,7 @@ Tick a stage (`[x]`) only when its acceptance checks pass and CI is green. Detai
 
 - [x] **Stage 0 — Skeleton & CI.** Gradle multi-module (`:core` pure Kotlin, `:app` Compose), version catalog,
   wrapper, stable debug keystore, GitHub Actions debug APK artifact, optional API-key secrets → BuildConfig, docs.
-- [ ] **Stage 1 — Map + mock service MVP.** MapLibre + OpenFreeMap map showing the real location; manifest
+- [x] **Stage 1 — Map + mock service MVP.** _(built & CI; on-phone test script in HANDOFF.md)_ MapLibre + OpenFreeMap map showing the real location; manifest
   permissions; `MockLocationService` (foreground, test providers gps/network/fused, startup cleaner); start/stop from
   UI; mock a fixed point; "not selected as mock app" explanation + deep link; one-time disclaimer.
 - [ ] **Stage 2 — Routing & tracing.** `RoutingProvider` (ORS default, GraphHopper alt), point-to-point best route,

@@ -30,6 +30,13 @@ Built entirely in GitHub Actions; installed from the phone. See `docs/ROADMAP.md
 - **Battery saver** (same app page) → **No restrictions**.
 - Open **Recents**, long-press (or swipe down on) the MockRoute card → **Lock** 🔒 so it is not killed.
 
+## Using it (Stage 1)
+1. On first launch, follow the setup wizard until every step is green (Settings ⚙ → **Check setup** reopens it).
+2. The map shows your real location (blue). **Long-press** anywhere → **Simulate here** (stay at that point) or
+   **Walk straight to here** (≈ 5 km/h from where you are now).
+3. Control it from the card at the bottom or the notification: **Pause / Resume / Stop**. Stop (or swiping MockRoute
+   out of Recents) gives you your real location back within ~30 s.
+
 ## Optional API keys
 Routing/traffic providers can use keys stored as GitHub repository secrets
 (**Settings → Secrets and variables → Actions**): `ORS_API_KEY`, `TOMTOM_API_KEY`, `GRAPHHOPPER_API_KEY`,
