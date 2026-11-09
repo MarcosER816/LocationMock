@@ -1,9 +1,29 @@
 # Handoff
 
-_Last updated: 2026-11-09 — Stage 1 (map + mock service MVP) — **verified on device**._
+_Last updated: 2026-11-09 — Stage 2 (routing & tracing) — built, CI; awaiting phone test. Stage 1 verified on device._
 
 ## Done
-### Stage 1
+### Stage 2 — routing & tracing
+- **Mode toolbar** (top of map): Explore | A → B | Streets | Free draw.
+  - **A → B (point-to-point):** A defaults to the last real location. Tapping the map sets B. A and B are
+    draggable Compose overlay handles (`EndpointHandles`/`DragHandle`): the drop point is converted with
+    `CameraProjection.positionFromScreenLocation`. "Move A" makes the next tap set A, and "A = my location" resets it.
+    Requests are debounced 400 ms and the newest wins (`collectLatest`).
+  - **Streets (street-by-street):** each tap appends a waypoint, and the pair (previous, new) is routed as one leg.
+    Legs are concatenated with the duplicate joint dropped. Undo removes the last waypoint and leg (cancelling its
+    request); Clear removes everything. "Start at my location" seeds the first waypoint.
+  - **Free draw:** same as Streets, with snapping off (straight legs). The "Free draw (no snapping)" switch can be
+    flipped mid-route, and each leg keeps its own snap flag.
+- **Segment sheet:** total distance (provider distance), provider + profile (+ provider ETA), fallback notice in
+  red, Walk/Car/Bus chips (changing them re-routes), speed slider 1–100 km/h (default 5/40/25) and **Play at constant
+  speed**. Play passes the route to the service as `TrajectorySpec.Polyline` (a flat DoubleArray extra) →
+  `PolylineTrajectory`.
+- **Map layers:** edited route (blue with a white casing; grey when it's a straight-line fallback), street
+  waypoints, and the playing path (red). GeoJSON strings are memoized per geometry; display uses `simplify(1 m)`.
+- **Settings → Routing:** provider radio (OpenRouteService / GraphHopper / Straight lines), API-key fields (masked,
+  Show/Save), a status line saying which key is used, and Clear route cache.
+
+### Stage 1 (verified on device)
 - **Map** (`ui/MapScreen.kt`): MapLibre Compose map with the OpenFreeMap `liberty` style. If a style fails to load
   it falls back to OpenFreeMap `bright`, then to MapLibre demotiles (`map/TileStyle.kt`). Pan/zoom, a long-press
   marker (orange), the real location (blue, dimmed while simulating), the mocked location (red) and the walk path.
@@ -50,6 +70,51 @@ _Last updated: 2026-11-09 — Stage 1 (map + mock service MVP) — **verified on
 Gradle multi-module skeleton, version catalog, wrapper, stable debug keystore, CI artifact `app-debug`,
 optional API-key secrets → BuildConfig.
 
+## Routing: endpoints, quotas, caching
+| Provider | Endpoint | Auth | Profiles (Walk / Car / Bus) | Free quota |
+|---|---|---|---|---|
+| OpenRouteService (HeiGIT) | `POST https://api.heigit.org/openrouteservice/v2/directions/{profile}/geojson` | header `Authorization: <key>` | `foot-walking` / `driving-car` / `driving-hgv` (bus proxy) | Standard plan ≈ 2,000 directions/day, 40/min (see account.heigit.org dashboard) |
+| GraphHopper | `POST https://graphhopper.com/api/1/route?key=<key>` | query `key` | `foot` / `car` / `car` (no bus/truck on free) | 500 credits/day, non-commercial |
+| Straight line | — (offline) | — | — | unlimited |
+
+- **ORS host move:** HeiGIT deprecated `api.openrouteservice.org` (28 Apr 2026; 10 % quota from 27 Aug) in favour of
+  `api.heigit.org/openrouteservice`. The old host shuts down in November 2026. Same keys and the same
+  `Authorization` header. We only use the new host (`OrsCodec.BASE_URL`).
+- **Request bodies:** ORS `{"coordinates":[[lon,lat],…],"extra_info":["waytype"],"instructions":false}`.
+  GraphHopper `{"points":[[lon,lat],…],"profile":"foot","points_encoded":false,"details":["max_speed","road_class"]}`.
+- **Errors → friendly messages** (`RoutingException.userMessage`). Checked live on 2026-11-09: **ORS returns 403
+  `{"error":"Access to this API has been disallowed"}` for an invalid key** (not 401), and GraphHopper returns 401.
+  Other mappings: 429 → rate limited; ORS codes 2009/2010/2004 or 404 → no route ("try points closer to a road");
+  network → offline.
+- **Fallback:** no key, an error, or offline → a straight line with a notice (route drawn grey). The app keeps
+  working without keys.
+- **Keys:** a key saved in Settings (DataStore) wins. Otherwise the build-time `BuildConfig` key from the GitHub
+  secret is used (`ORS_API_KEY`, `GRAPHHOPPER_API_KEY`), which is baked into the debug APK (fine for a personal
+  sideloaded app).
+- **Cache** (`net/RouteCache`): `cacheDir/routes/<sha256>.json`, keyed by provider | profile | points rounded to
+  1e-6°. 30-day TTL, max 500 files (oldest evicted). Only real (non-fallback) results are stored. Re-adding the
+  same leg, undo/redo, or switching profile back costs no request.
+- **Debounce:** point-to-point 400 ms. Street legs make one request per tap (a tap is deliberate), cancelled on undo.
+
+## RouteGeometry API (for Stage 3+)
+`com.mockroute.core.route.RouteGeometry`: immutable, haversine cumulative distances, kotlinx-serializable as a
+list of `LatLon`.
+- `RouteGeometry.of(points)`, `EMPTY`, `points`, `size`, `start`, `end`, `lengthM`.
+- `cumulativeM(i)`, `cumulativeDistances()`: distance from the start to vertex i.
+- `pointAtDistance(d)`: `PolylinePoint(position, bearingDeg, segmentIndex)`, clamped, O(log n).
+- `densify(maxSpacingM = 10.0)`: great-circle points inserted, original vertices kept, length preserved.
+- `simplify(toleranceM)`: Douglas–Peucker (local equirectangular), for display only.
+- `a + b`: concatenation that drops a duplicate joint.
+
+`RouteResult(geometry, distanceM, durationS?, providerId, profile, spans: List<RouteSpan>, isFallback, notice)`.
+`RouteSpan(startM, endM, speedLimitKmh?, roadClass?)` is distance-based, so it survives densify. ORS fills
+`roadClass` from `waytype`; GraphHopper fills both `speedLimitKmh` (max_speed) and `roadClass`.
+`RouteResult.concat(legs, profile)` joins legs and offsets the spans.
+`RoutingProvider { id; displayName; suspend fun route(points, profile): RouteResult }` throws `RoutingException`.
+`RoutingService.route(points, profile, snap, settings)` never throws (it falls back).
+`PolylineTrajectory(geometry, speedMps)` is the temporary playback; Stage 4 replaces it with speed profiles over
+`densify()`d geometry.
+
 ## Versions
 | Component | Version | Note |
 |---|---|---|
@@ -82,7 +147,9 @@ optional API-key secrets → BuildConfig.
 - Upgrading past 0.14 requires compileSdk 37 (it pulls Compose 1.12 and lifecycle 2.11).
 
 ## Stubbed
-- Only Static and StraightLine trajectories; no routing, distributions or noise yet (Stages 2–9).
+- Playback is constant speed (no acceleration, no v/t distributions) until Stages 3–4.
+- A route segment is not saved or persisted yet (timeline = Stage 8); leaving the mode keeps the edit in memory only.
+- Street waypoints aren't draggable (only point-to-point A/B are).
 - The disclaimer is shown in the wizard and enforced before start. There is no separate first-launch popup if the
   wizard is skipped (it pops up on the first Simulate tap instead).
 
@@ -100,17 +167,45 @@ optional API-key secrets → BuildConfig.
   the dialog + deep link without crashing. CI build: Android CI run #2.
 - Lint: 0 errors; warnings are cosmetic (Timber, `toUri`, targetSdk 37 available).
 
+## Known issues (Stage 2)
+- The ORS/GraphHopper fixtures in `core/src/test/resources/fixtures` are hand-built from the documented formats
+  (no key in the agent sandbox). Error bodies were checked against the live APIs. If a real response ever fails to
+  parse, save it as a new fixture.
+- The tall segment sheet covers part of the map on small screens.
+
 ## Next steps
-- Stage 2 — routing & tracing (`RoutingProvider`: ORS default, GraphHopper alt; snapped street tracing; cache).
+- Run the Stage 2 phone test script below.
+- Stage 3: distributions + feasibility UI (use `RouteResult.distanceM`, `RouteGeometry.densify()`).
 
 ## Build steps
 - Agent sandbox: `./gradlew :core:test` (no Android SDK needed). For `:app:assembleDebug`, install
   `platforms;android-36` + `build-tools;36.0.0` with sdkmanager and point `sdk.dir` in `local.properties` at it.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
-- Verified 2026-11-09 in sandbox: `:core:test` 10/10 passed; `:app:lintDebug` 0 errors; `:app:assembleDebug` OK.
+- Verified 2026-11-09 in sandbox: `:core:test` 24/24 passed; `:app:lintDebug` 0 errors; `:app:assembleDebug` OK.
 
-## How to verify on phone (Stage 1 test script)
+## How to verify on phone (Stage 2 test script)
+Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in Settings → Routing.
+1. Install the new `app-debug`. Settings ⚙ → Routing: OpenRouteService is selected, and the key field says
+   "using the key built in from GitHub secrets" (or paste your key and tap Save key).
+2. Map → **A → B**. A green "A" handle sits on your real location. Tap the map about 1 km away: a red "B" appears.
+   Within about 1 s a **blue line following the streets** appears, and the sheet shows the distance and
+   "OpenRouteService · Walk · ETA".
+3. Drag **B** to another street, then drag **A**. The route recalculates after you let go.
+4. Tap **Car**, then **Bus**. The route changes to roads that allow cars/trucks; the distance updates.
+5. **Streets**: tap "Start at my location" (or tap a first point), then tap 5 points along nearby streets.
+   Each tap extends one continuous blue line along the streets (no gaps at the joints).
+6. Tap **Undo** twice: the last two legs disappear. Tap one more point: it reconnects from the current end.
+7. Turn on **Free draw (no snapping)** and tap 2 points: straight segments are added. Turn it off again.
+8. Set the speed slider to about 5 km/h → **Play at constant speed**. The red dot follows the route. Open **Google
+   Maps**: your location moves along the streets. Stop when done.
+9. No-key fallback: Settings → Routing → paste `x` in the ORS key and Save. A → B now draws a **grey straight
+   line** with a red notice ("…refused the request (403)… key invalid…"). Clear the field, Save, and routing works
+   again (built-in key). Choosing "Straight lines (offline)" always draws straight lines without any notice.
+10. Optional: airplane mode → A → B gives a straight line and an "offline" notice. Previously routed A/B pairs
+    still come from the cache.
+
+## Stage 1 test script (passed 2026-11-09)
 1. Install the new `app-debug` artifact over the old one (it should update in place, with no uninstall).
 2. Open MockRoute. The setup wizard appears (first run after the update). Work through each step with its button
    and return to the app. Steps 1, 2, 3, 4 and 6 should turn green (✓) on their own; step 5 is info only.

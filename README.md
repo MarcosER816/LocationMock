@@ -37,6 +37,14 @@ Built entirely in GitHub Actions; installed from the phone. See `docs/ROADMAP.md
 3. Control it from the card at the bottom or the notification: **Pause / Resume / Stop**. Stop (or swiping MockRoute
    out of Recents) gives you your real location back within ~30 s.
 
+## Routes (Stage 2)
+Use the toolbar at the top of the map:
+- **A → B**: A starts at your location; tap the map to set B, and drag A/B to adjust. The route follows streets
+  for Walk / Car / Bus.
+- **Streets**: tap point after point; each step is routed along the streets. **Undo** / **Clear**.
+- **Free draw**: same as Streets, but with straight lines (no snapping).
+Then **Play at constant speed** moves your mocked location along the route.
+
 ## Optional API keys
 Routing/traffic providers can use keys stored as GitHub repository secrets
 (**Settings → Secrets and variables → Actions**): `ORS_API_KEY`, `TOMTOM_API_KEY`, `GRAPHHOPPER_API_KEY`,
