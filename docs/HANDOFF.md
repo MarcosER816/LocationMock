@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-09 — Stage 1 (map + mock service MVP)._
+_Last updated: 2026-11-09 — Stage 1 (map + mock service MVP) — **verified on device**._
 
 ## Done
 ### Stage 1
@@ -94,11 +94,13 @@ optional API-key secrets → BuildConfig.
   app in Developer options also clears it.
 - Google Maps reads Play services' fused location. If it doesn't follow the mock, check that the GMS layer is ON
   (Settings) and that Google Location Accuracy is OFF (wizard step 5).
-- Not verified on a device yet (no emulator in the agent sandbox: no KVM). Lint: 0 errors; warnings are cosmetic
-  (Timber, `toUri`, targetSdk 37 available).
+- **2026-11-09: user ran the full Stage 1 phone test script (steps 1–14 below) on the POCO F7 Ultra
+  (HyperOS 3 / Android 16) — all steps OK.** Wizard all green; Google Maps follows "Simulate here" and the
+  5 km/h walk; Pause/Resume works; Stop and swipe-from-Recents restore the real location; "not mock app" shows
+  the dialog + deep link without crashing. CI build: Android CI run #2.
+- Lint: 0 errors; warnings are cosmetic (Timber, `toUri`, targetSdk 37 available).
 
 ## Next steps
-- Run the phone test script below and record the results here.
 - Stage 2 — routing & tracing (`RoutingProvider`: ORS default, GraphHopper alt; snapped street tracing; cache).
 
 ## Build steps
