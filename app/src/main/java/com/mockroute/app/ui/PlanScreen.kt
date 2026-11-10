@@ -53,12 +53,18 @@ private const val KMH = 3.6
 
 private fun fmtKmh(mps: Double) = String.format(Locale.US, "%.1f km/h", mps * KMH)
 
-/** h:mm (UI convention for times). */
+/**
+ * Durations for the UI: "25 min", "1 h 05 min". (A bare "6:00" was read as 6 minutes on the phone, so the units
+ * are always spelled out.)
+ */
 internal fun fmtHmm(seconds: Double): String {
     if (!seconds.isFinite()) return "∞"
     val m = ceil(seconds / 60.0 - 1e-9).toLong().coerceAtLeast(0)
-    return String.format(Locale.US, "%d:%02d", m / 60, m % 60)
+    return if (m >= 60) String.format(Locale.US, "%d h %02d min", m / 60, m % 60) else "$m min"
 }
+
+/** Time slider scales: fine control up to 1 hour by default, 6 hours (the cap) for long trips. */
+private val TIME_SCALES = listOf("1 h" to 3600.0, "6 h" to CoupledSliders.T_CAP)
 
 @Composable
 fun PlanScreen(vm: MainViewModel, onBack: () -> Unit) {
@@ -84,6 +90,13 @@ fun PlanScreen(vm: MainViewModel, onBack: () -> Unit) {
                 OutlinedButton(onClick = onBack) { Text("Done") }
             }
 
+            if (p.autoFromTraffic) {
+                Text(
+                    "Auto, from traffic (TomTom historic). Edit anything; your edits stay until the next traffic fetch.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
             FeasibilityBanner(d, p, onApply = vm::applyCoupled)
 
             GammaCard(
@@ -100,6 +113,7 @@ fun PlanScreen(vm: MainViewModel, onBack: () -> Unit) {
                 title = "Time",
                 setting = p.time,
                 rangeMax = CoupledSliders.T_CAP,
+                scales = TIME_SCALES,
                 toUi = { it / 60.0 },
                 fromUi = { it * 60.0 },
                 uiStep = 1.0,
@@ -177,11 +191,13 @@ private fun CoupledPanel(d: Double, p: SegmentPlanSettings, onApply: (CoupledSli
         valueRange = 0f..100f,
     )
     Text("t_max ${fmtHmm(c.tMax)}")
+    val tScale = if (maxOf(c.tMax, c.tFloor) > 3600.0) 360f else 60f
     Slider(
         value = (c.tMax / 60.0).toFloat(),
         onValueChange = { c = c.withTMax(it.roundToInt() * 60.0) },
-        valueRange = 0f..360f,
+        valueRange = 0f..tScale,
     )
+    Text(if (tScale == 60f) "Slider: 0 – 1 h" else "Slider: 0 – 6 h", style = MaterialTheme.typography.bodySmall)
     Button(onClick = { onApply(c) }) { Text("Apply ${fmtKmh(c.vMax)} / ${fmtHmm(c.tMax)}") }
 }
 
@@ -196,8 +212,12 @@ private fun GammaCard(
     uiStep: Double,
     format: (Double) -> String,
     onChange: (GammaSetting) -> Unit,
+    scales: List<Pair<String, Double>>? = null,
 ) {
     val dist: BoundedGamma = remember(setting) { setting.distribution() }
+    // Slider scale (time only): the smallest scale that fits the current range.
+    var scaleMax by remember { mutableStateOf(scales?.firstOrNull { it.second >= setting.hi }?.second ?: rangeMax) }
+    val sliderMax = if (scales != null) maxOf(scaleMax, setting.hi) else rangeMax
     Card {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -209,8 +229,23 @@ private fun GammaCard(
                     val hi = fromUi((r.endInclusive / uiStep).roundToInt() * uiStep)
                     onChange(setting.withRange(lo, hi))
                 },
-                valueRange = 0f..toUi(rangeMax).toFloat(),
+                valueRange = 0f..toUi(sliderMax).toFloat(),
             )
+            if (scales != null) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Slider scale:", style = MaterialTheme.typography.bodySmall)
+                    scales.forEach { (label, max) ->
+                        FilterChip(
+                            selected = scaleMax == max,
+                            onClick = {
+                                scaleMax = max
+                                if (setting.hi > max) onChange(setting.withRange(minOf(setting.lo, max), max))
+                            },
+                            label = { Text("0 – $label") },
+                        )
+                    }
+                }
+            }
             SingleChoiceSegmentedButtonRow {
                 CenterKind.entries.forEachIndexed { i, k ->
                     SegmentedButton(
