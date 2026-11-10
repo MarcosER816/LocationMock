@@ -20,7 +20,7 @@ Tick a stage (`[x]`) only when its acceptance checks pass and CI is green. Detai
 - [x] **Stage 7 — Street zone.** _(0.7.0; phone-tested 2026-11-10)_ Overpass `RoadGraphProvider` (cached, ≤100 queries/day); wander on streets inside
   the polygon.
 - [x] **Stage 8 — Timeline.** _(0.8.0; CI; phone test script in HANDOFF.md)_ Chain segments; enforce B(i) == A(i+1); first A = real location captured before mocking.
-- [ ] **Stage 9 — GPS noise.** Gauss–Markov error, environment-dependent accuracy, multipath jumps, consistent
+- [x] **Stage 9 — GPS noise.** _(0.9.0; CI; phone test script in HANDOFF.md)_ Gauss–Markov error, environment-dependent accuracy, multipath jumps, consistent
   speed/bearing/altitude.
 - [ ] **Stage 10 — Polish + device testing.** Setup wizard, settings (keys in DataStore), HyperOS reliability,
   end-to-end testing on the POCO F7 Ultra.

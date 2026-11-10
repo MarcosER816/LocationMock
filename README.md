@@ -51,6 +51,12 @@ red = fast. A label shows the total time. Tap the line to see the speed and ETA 
 generates a different plan; **Lock time** keeps the duration fixed. **Play plan** moves your mocked location along
 the route with that speed profile.
 
+## GPS noise (Stage 9)
+Settings → **GPS noise** (Off / Light / Realistic / Heavy): the simulated location jitters like a real phone's
+GPS, with a changing accuracy circle, larger errors indoors, occasional short jumps near buildings and a few
+missed fixes. Each environment has its own strength slider; the **Debug overlay** shows the true path against the
+injected points.
+
 ## Timeline (Stage 8)
 Tap **⏱** on the map to chain steps: **+ Route / + Indoor / + Street / + Pause**. Points are named A, B, C…; each
 step starts where the previous one ends, and those shared points are fixed (only the first and last point move;

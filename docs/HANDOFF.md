@@ -1,8 +1,34 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 8 (timeline) — 0.8.3 (user rules: fixed points, letters, context, auto speed/time, street A/B never outside, free street corners) built, CI; awaiting phone test. Stages 1–7 verified on device._
+_Last updated: 2026-11-10 — Stage 9 (GPS noise) — 0.9.0 built, CI; awaiting phone test. Also in 0.9.0: street-zone exit fix and real routes in the grey context. Stages 1–7 verified on device; Stage 8 rules (0.8.1–0.8.3) reviewed on device by the user._
 
 ## Done
+### Stage 9 — GPS noise (0.9.0)
+- **`noise.GpsNoiseModel(settings, seed)`** (`:core`, seeded, stateful): `next(truth, environment, dt = 1 s):
+  NoisyFix?` (null = a missed fix).
+- **Where it runs:** in `MockLocationService`, on the output of whatever trajectory plays (timeline, plan, zone,
+  static). The settings are read once at Play; seed 0 = random per run. The model is fed every tick, also while
+  paused or standing still, so the dot keeps wandering naturally.
+- **Environment** comes from `Trajectory.environmentAt(t)`: Indoor for indoor zones, Urban for everything else,
+  or the per-step override (`Segment.environment`; the timeline card button "GPS: auto / Open sky / Urban /
+  Indoor").
+- **Injected Location** uses the model's accuracy, vertical/speed/bearing accuracies, noisy speed and bearing.
+  The push is delayed by 20 ms ± 20 ms (tick jitter), so `time`/`elapsedRealtimeNanos` stay fresh and monotonic.
+  A missed fix simply isn't injected.
+- **Settings → GPS noise:** preset chips **Off / Light / Realistic (default) / Heavy**, one error-scale slider per
+  environment (×0.25–3, showing the resulting typical accuracy), seed field, **Debug overlay** switch (true path
+  as a thin black line; injected points purple, red during a jump; last 10 min).
+- The red "mocked location" dot and the status card show the *reported* (noisy) position.
+
+### 0.9.0 fixes (phone report 2026-11-10)
+- **Street-zone exit couldn't be moved and didn't appear:** a new timeline zone starts with exit == entry, and
+  the locked entry handle grabbed every drag (and hid the exit under it). Fix: fixed points are no longer drag
+  handles (`zoneHandles(state, lockEntry, lockExit)`), the free exit is hit first, and after **Close shape** the
+  tool switches to **Exit** with the hint "The end point isn't placed yet" when the exit is still on the entry.
+- **Grey routes are the real configured routes:** on Done, the editor's routed geometry (simplified to 1 m) is
+  saved in `Segment.Route.geometry/geometryFor`; the timeline map and the grey context use planned path → saved
+  geometry → straight line (only if never routed).
+
 ### Stage 8 — TIMELINE (0.8.0)
 - **⏱ button** (top right of the map) → Timeline screen:
   - The **start (first A)** card: real location (captured before mocking) or custom; **Use my location** / **Move
@@ -278,6 +304,47 @@ optional API-key secrets → BuildConfig.
 
 - **Phone result 2026-11-10 (0.6.1):** shape closes; "everything seems fine". The fps figure of the 3D preview
   wasn't reported; ask for it if performance comes up.
+
+## Stage 9: noise parameters and tuning guide
+**Defaults (Realistic), per environment** (`NoiseSettings.params(env)`):
+
+| | σ per axis | τ | accuracy range | multipath | missed fixes |
+|---|---|---|---|---|---|
+| Open sky | 2.5 m | 30 s | 3–8 m | none | 0 |
+| Urban | 6 m | 20 s | 6–20 m | 12 / h (1 per 5 min) | 0.5 % |
+| Indoor | 12 m | 10 s | 15–50 m | 20 / h | 3 % |
+
+**Presets:** Light = σ and accuracy × 0.5, no multipath, half the missed fixes. Heavy = × 1.7, multipath × 2.5,
+missed × 2. The per-environment sliders multiply σ and the accuracy range on top (0.25–3).
+
+**Model:**
+- Horizontal error per axis: e = σ·q·g, with g a unit Gauss–Markov state (φ = e^(−Δt/τ)).
+- q = a slow log-normal "quality" walk (sd 0.2, τ 120 s, median 1), shared with the accuracy.
+- **Reported accuracy = 1.51·σ·q** (the 68 % radius of a 2-D Gaussian), clamped to the range, + 0.7 × the current
+  multipath offset.
+- Environment change: all parameters ramp linearly over a random 5–15 s.
+- Multipath: 15–60 m in a random direction, decaying linearly over 3–10 s.
+- Altitude: truth + σ_v·g_z with σ_v = 2.5·σ·q (τ × 1.5); vertical accuracy = σ_v.
+- Speed: truth + N(0, 0.2 m/s), ≥ 0; speed accuracy 0.3–1 m/s.
+- Bearing: truth + N(0, (6°/v) clamped to 1.5–45°). Under 0.5 m/s the last bearing is held with a bearing
+  accuracy of 150°.
+
+**Tuning guide:**
+- Dot too jumpy or too calm → the environment's slider (or the preset).
+- Dot wanders too fast or too slowly → τ in `NoiseSettings.params` (smaller = quicker).
+- Accuracy circle too stable → `Q_SD` / `Q_TAU_S` in `GpsNoiseModel`.
+- Too many or too few jumps → `jumpsPerHour`.
+- Apps complain about missing fixes → `missProbability`.
+- Keep accuracy = 1.51·σ, or the "68 % within accuracy" property (which apps can check) breaks.
+
+**Measured (1 h stationary, open sky, 5 seeds):** 68th-percentile error 3.5–4.8 m against a median reported
+accuracy of 3.6–4.3 m (all within ±25 %); lag-1 autocorrelation 0.955–0.972 against φ = 0.967.
+
+**Not done:** per-step altitude base (altitude is still truth = 0 + noise); the accuracy circle isn't drawn in
+the debug overlay; a missed fix is skipped rather than repeating the last one.
+
+**File format:** `Segment.environment` is a new optional field in timeline files. Still **version 1** (older
+files load with null; an older app ignores the field).
 
 ## 0.8.3 — street-zone corners are free (user request, 2026-11-10)
 - Indoor zone steps keep the fixed entry as the shape's first corner (the user likes that). **Street zone steps no
@@ -754,8 +821,23 @@ list of `LatLon`.
 - The tall segment sheet covers part of the map on small screens.
 
 ## Next steps
-- Run the Stage 8 phone test script below.
-- Stage 9: GPS noise (Gauss–Markov error, environment-dependent accuracy, multipath jumps).
+- Run the Stage 9 phone test below (and the 0.8.x timeline checks).
+- Stage 10: polish + device testing.
+
+## How to verify on phone (Stage 9 + 0.9.0 fixes)
+1. Install 0.9.0. Timeline: add a route, then **+ Street** → Edit: draw the shape around the fixed start, **Close
+   shape**. The tool jumps to **Exit** ("The end point isn't placed yet"). Tap inside: the end point appears with
+   its own letter, and you can drag it.
+2. While editing that zone, the previous route is drawn in grey **along the streets** you configured (not a
+   straight line).
+3. Settings → **GPS noise**: Realistic is selected. Turn **Debug overlay** on.
+4. Play a walking route. The red dot jitters around the black true line by a few metres; in Google Maps the blue
+   dot wanders slightly and the accuracy circle changes size.
+5. Play an indoor zone: clearly larger error and circle. Occasional red points are the configured jumps, and they
+   decay within seconds.
+6. "Simulate here" (standing still): the dot keeps wandering gently instead of freezing.
+7. Preset **Off**: a perfect line again. **Heavy**: obviously worse. In a timeline, a card's "GPS: auto" button
+   cycles Open sky / Urban / Indoor for that step.
 
 ## How to verify 0.8.1 on phone (do first)
 1. Timeline: + Route (Edit → set point B) → + Street → **Edit**: the street zone's first corner is already at B, and
@@ -855,7 +937,7 @@ list of `LatLon`.
   `platforms;android-36` + `build-tools;36.0.0` with sdkmanager and point `sdk.dir` in `local.properties` at it.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
-- Verified 2026-11-10 in sandbox: `:core:test` 99/99 passed (0.8.1 rules + auto settings); before: 93/93 passed (Stage 8: 1,000 random edit sequences, pause runs, fixes, codec/versioning, Route→Indoor→Route→Street→Pause continuity ×20 seeds, GPX, seeds); before: 86/86 passed (Stage 7: Overpass parse/query, mode filters, polygon clipping, oneway, SCC, snapping, 150 walk + 150 car plans on/inside/on-time/accel/oneway/turn caps, dominant vs uniform, 30×30 perf); before: 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
+- Verified 2026-11-10 in sandbox: `:core:test` 106/106 passed (Stage 9 noise: stationary consistency + autocorrelation ×5 seeds, validity over 2 h with environment switches for 3 presets, ordering of environments, ramp, determinism/multipath); 0.8.1–0.8.3: 99–100/100 passed (rules + auto settings); before: 93/93 passed (Stage 8: 1,000 random edit sequences, pause runs, fixes, codec/versioning, Route→Indoor→Route→Street→Pause continuity ×20 seeds, GPX, seeds); before: 86/86 passed (Stage 7: Overpass parse/query, mode filters, polygon clipping, oneway, SCC, snapping, 150 walk + 150 car plans on/inside/on-time/accel/oneway/turn caps, dominant vs uniform, 30×30 perf); before: 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
 
 ## 0.2.2 (2026-11-10)
 - **Phone round 2:** the A/B markers now follow the map (map-layer approach confirmed ✅).
