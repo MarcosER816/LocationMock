@@ -63,6 +63,7 @@ import org.maplibre.compose.layers.LineLayer
 import org.maplibre.compose.layers.SymbolLayer
 import org.maplibre.compose.expressions.dsl.feature
 import org.maplibre.compose.expressions.dsl.convertToColor
+import org.maplibre.compose.expressions.dsl.asString
 import org.maplibre.compose.expressions.dsl.offset
 import org.maplibre.compose.expressions.dsl.format
 import org.maplibre.compose.expressions.dsl.span
@@ -95,6 +96,8 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
     val planStatus by vm.planner.status.collectAsStateWithLifecycle()
     val planSeed by vm.planner.seed.collectAsStateWithLifecycle()
     val lockTime by vm.planner.lockTime.collectAsStateWithLifecycle()
+    val trafficStatus by vm.traffic.status.collectAsStateWithLifecycle()
+    val departure by vm.traffic.departure.collectAsStateWithLifecycle()
     // Tap on the plan line → speed & ETA at that point.
     var inspect by remember { mutableStateOf<PlanInspection?>(null) }
     val scope = rememberCoroutineScope()
@@ -225,6 +228,36 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 textAllowOverlap = const(true),
                 textIgnorePlacement = const(true),
             )
+            // Stage 5: worst traffic points ("≈ 08:14, 14 km/h, +4 min").
+            val worstJson = remember(trafficStatus, editor.result?.geometry) {
+                val tr = trafficStatus as? TrafficStatus.Ready
+                val g = editor.result?.geometry
+                if (tr == null || g == null || tr.geometry != g) EMPTY_FC
+                else worstPointsJson(tr.analysis, g)
+            }
+            val worstSource = rememberGeoJsonSource(GeoJsonData.JsonString(worstJson))
+            CircleLayer(
+                id = "traffic-worst",
+                source = worstSource,
+                color = const(Color(0xFFC5221F)),
+                radius = const(9.dp),
+                strokeColor = const(Color.White),
+                strokeWidth = const(3.dp),
+            )
+            SymbolLayer(
+                id = "traffic-worst-label",
+                source = worstSource,
+                textField = format(span(feature["label"].asString())),
+                textFont = const(listOf("Noto Sans Bold")),
+                textSize = const(0.9.em),
+                textColor = const(Color(0xFFC5221F)),
+                textHaloColor = const(Color.White),
+                textHaloWidth = const(3.dp),
+                textOffset = offset(0.em, 1.5.em),
+                textAllowOverlap = const(true),
+                textIgnorePlacement = const(true),
+            )
+
             val inspectSource = rememberGeoJsonSource(GeoJsonData.JsonString(pointJson(inspect?.point)))
             CircleLayer(
                 id = "plan-inspect",
@@ -407,6 +440,11 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     onReroll = vm.planner::reroll,
                     onLockTime = vm.planner::setLockTime,
                     onPlayPlan = vm::playPlan,
+                    trafficStatus = trafficStatus,
+                    departure = departure,
+                    requestsToday = vm.traffic.requestsToday(settings),
+                    onDeparture = vm.traffic::setDeparture,
+                    onRefetch = vm.traffic::refetchNow,
                 )
             }
             selected?.takeIf { !editing }?.let { p ->
@@ -430,6 +468,17 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     .padding(end = 6.dp, bottom = 2.dp),
             )
         }
+    }
+}
+
+private fun worstPointsJson(a: com.mockroute.core.traffic.TrafficAnalysis, g: com.mockroute.core.route.RouteGeometry): String {
+    if (a.worst.isEmpty()) return EMPTY_FC
+    return a.worst.joinToString(",", prefix = """{"type":"FeatureCollection","features":[""", postfix = "]}") { w ->
+        val p = g.pointAtDistance(w.atM).position
+        val label = String.format(
+            Locale.US, "≈ %s, %.0f km/h, +%d min", clock(w.arrivalEpochS), w.speedMps * 3.6, Math.round(w.delayS / 60.0),
+        )
+        """{"type":"Feature","properties":{"label":"$label"},"geometry":{"type":"Point","coordinates":[${p.lon},${p.lat}]}}"""
     }
 }
 

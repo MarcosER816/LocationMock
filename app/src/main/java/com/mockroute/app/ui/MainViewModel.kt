@@ -98,9 +98,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Length of the segment being planned (the geometry that will actually be played). */
     fun segmentDistance(): Double? = editor.state.value.result?.geometry?.lengthM
 
+    /** User edits: clear the "auto, from traffic" flag. */
     fun updatePlan(transform: (SegmentPlanSettings) -> SegmentPlanSettings) {
         val cur = _plan.value ?: defaultPlan()
-        _plan.value = transform(cur)
+        _plan.value = transform(cur).copy(autoFromTraffic = false)
     }
 
     fun resetPlan() {
@@ -135,7 +136,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .distinctUntilChanged()
             .stateIn(viewModelScope, SharingStarted.Eagerly, null to com.mockroute.core.route.RoutingProfile.Walk)
 
-    val planner = PlanController(viewModelScope, routeForPlan, _plan)
+    // ---- Stage 5: traffic --------------------------------------------------------------------------
+    val trafficCache = com.mockroute.app.net.TrafficDiskCache(app)
+    val traffic = TrafficController(viewModelScope, repo, trafficCache, routeForPlan, settings) { analysis ->
+        // Fill the Stage 3 settings ("auto, from traffic"); everything stays editable.
+        _plan.value = analysis.settings.copy(correlationLengthM = _plan.value?.correlationLengthM)
+    }
+
+    val planner = PlanController(viewModelScope, routeForPlan, _plan, traffic.status)
+
+    fun setTomTomKey(key: String) = viewModelScope.launch { repo.setTomTomApiKey(key) }
+    fun setGoogleRoutesKey(key: String) = viewModelScope.launch { repo.setGoogleRoutesApiKey(key) }
 
     fun playPlan() {
         val ready = planner.status.value as? PlanStatus.Ready

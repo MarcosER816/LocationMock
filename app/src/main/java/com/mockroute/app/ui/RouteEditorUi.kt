@@ -104,6 +104,11 @@ fun SegmentSheet(
     onReroll: () -> Unit,
     onLockTime: (Boolean) -> Unit,
     onPlayPlan: () -> Unit,
+    trafficStatus: TrafficStatus,
+    departure: Long,
+    requestsToday: Int,
+    onDeparture: (Long) -> Unit,
+    onRefetch: () -> Unit,
 ) {
     val result = state.result
     Card(
@@ -165,6 +170,11 @@ fun SegmentSheet(
                     }
                 }
                 EditMode.Explore -> Unit
+            }
+
+            // Stage 5: traffic (Car/Bus).
+            if (result != null && state.profile != RoutingProfile.Walk) {
+                TrafficRow(trafficStatus, departure, requestsToday, onDeparture, onRefetch)
             }
 
             // Stage 3: speed/time distributions + feasibility.

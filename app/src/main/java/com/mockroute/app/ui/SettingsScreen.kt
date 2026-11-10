@@ -68,6 +68,18 @@ private fun RoutingSettings(vm: MainViewModel) {
         status = vm.keyStatus(s.graphHopperApiKey),
         onChange = vm::setGraphHopperKey,
     )
+    Text("Traffic (Car/Bus)", style = MaterialTheme.typography.titleMedium)
+    KeyField(
+        label = "TomTom API key (traffic)",
+        initial = s.tomTomApiKey,
+        status = vm.keyStatus(s.tomTomApiKey),
+        onChange = vm::setTomTomKey,
+    )
+    Text(
+        "TomTom free tier: 2,500 requests/day (shared by all TomTom APIs). One traffic analysis uses ≤ 12 and is " +
+            "cached 7 days per weekday + 15-min slot. Get a key at developer.tomtom.com. Google Routes: not used yet.",
+        style = MaterialTheme.typography.bodySmall,
+    )
     val test by vm.routingTest.collectAsStateWithLifecycle()
     Row(verticalAlignment = Alignment.CenterVertically) {
         OutlinedButton(onClick = vm::testRouting) { Text("Test routing") }

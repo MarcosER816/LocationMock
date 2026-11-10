@@ -53,6 +53,7 @@ class PlanController(
     private val scope: CoroutineScope,
     private val route: StateFlow<Pair<RouteGeometry?, RoutingProfile>>,
     private val settings: StateFlow<SegmentPlanSettings?>,
+    private val traffic: StateFlow<TrafficStatus>,
 ) {
     private val _seed = MutableStateFlow(Random.nextLong(1, Long.MAX_VALUE))
     val seed: StateFlow<Long> = _seed.asStateFlow()
@@ -73,7 +74,11 @@ class PlanController(
 
     init {
         scope.launch {
-            combine(route, settings, _seed, _lockTime) { r, s, seed, lock -> Inputs(r.first, r.second, s, seed, lock) }
+            combine(route, settings, _seed, _lockTime, traffic) { r, s, seed, lock, tr ->
+                // Use predicted chunk speeds as the copula's local median when the analysis is for this route.
+                val median = (tr as? TrafficStatus.Ready)?.takeIf { it.geometry == r.first }?.analysis
+                Inputs(r.first, r.second, s, seed, lock, median)
+            }
                 .distinctUntilChanged()
                 .debounce(250)
                 .collectLatest { inp -> _status.value = compute(inp) }
@@ -86,6 +91,7 @@ class PlanController(
         val settings: SegmentPlanSettings?,
         val seed: Long,
         val lock: Boolean,
+        val traffic: com.mockroute.core.traffic.TrafficAnalysis?,
     )
 
     private suspend fun compute(inp: Inputs): PlanStatus {
@@ -96,7 +102,10 @@ class PlanController(
         _status.value = PlanStatus.Generating
         return withContext(Dispatchers.Default) {
             val plan = SpeedProfileGenerator.generate(
-                SpeedProfileGenerator.Request(g, st, inp.profile, inp.seed, lockTime = inp.lock),
+                SpeedProfileGenerator.Request(
+                    g, st, inp.profile, inp.seed, lockTime = inp.lock,
+                    localMedian = inp.traffic?.let { a -> { s: Double -> a.medianSpeedAt(s) } },
+                ),
             )
             val scale = SpeedColorScale.forPlan(plan, st)
             // ≤ ~1000 features even for long routes.
