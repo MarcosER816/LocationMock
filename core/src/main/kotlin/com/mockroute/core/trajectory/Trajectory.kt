@@ -36,6 +36,13 @@ interface Trajectory {
     }
 }
 
+/** [inner] at a fixed base altitude (zones are planned in 2-D). */
+class WithAltitude(private val inner: Trajectory, private val altitudeM: Double) : Trajectory {
+    override val durationSeconds: Double? get() = inner.durationSeconds
+    override fun stateAt(tSeconds: Double) = inner.stateAt(tSeconds).copy(altitudeM = altitudeM)
+    override fun environmentAt(tSeconds: Double) = inner.environmentAt(tSeconds)
+}
+
 /** Stays at one point forever. */
 class StaticTrajectory(
     val point: LatLon,

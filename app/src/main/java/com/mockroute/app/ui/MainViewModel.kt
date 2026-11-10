@@ -212,7 +212,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             _message.value = "Finish the zone first (shape, A and B on the edge)"
             return
         }
-        startWith { _, _ -> TrajectorySpec.Zone(ready.generated.zone) }
+        startWith { alt, _ -> TrajectorySpec.Zone(ready.generated.zone, alt) }
     }
 
     private fun initZone() {
@@ -382,8 +382,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             plan.isStaleFor(t) -> _message.value = "The timeline changed since planning — tap “Plan all” again"
             !plan.playable -> _message.value = "Some segments couldn't be planned: " + plan.segments.mapNotNull { it.error }.joinToString("; ")
             else -> {
-                val traj = plan.trajectory()!!
-                startWith { _, _ -> TrajectorySpec.Timeline(traj, traj.startOf(fromSegment), t.name) }
+                // Base altitude = the real location's (captured before mocking); steps may override it.
+                startWith { alt, _ ->
+                    val traj = plan.trajectory(alt)!!
+                    TrajectorySpec.Timeline(traj, traj.startOf(fromSegment), t.name)
+                }
             }
         }
     }

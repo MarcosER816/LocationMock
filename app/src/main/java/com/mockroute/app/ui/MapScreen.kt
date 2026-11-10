@@ -60,6 +60,7 @@ import org.maplibre.compose.expressions.value.LineCap
 import org.maplibre.compose.expressions.value.LineJoin
 import org.maplibre.compose.layers.CircleLayer
 import org.maplibre.compose.layers.LineLayer
+import org.maplibre.compose.layers.FillLayer
 import org.maplibre.compose.layers.SymbolLayer
 import org.maplibre.compose.expressions.dsl.feature
 import org.maplibre.compose.expressions.dsl.convertToColor
@@ -377,6 +378,20 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     """{"type":"Feature","properties":{"color":"${if (s.multipath) "#D93025" else "#7B1FA2"}"},"geometry":{"type":"Point","coordinates":[${s.reported.lon},${s.reported.lat}]}}"""
                 }
             }
+            // Accuracy circle (the reported 68 % radius) around the injected position.
+            val circleJson = remember(sim.current, showNoise) {
+                val c = sim.current
+                if (!showNoise || c == null) EMPTY_FC
+                else {
+                    val ring = (0..36).joinToString(",") { k ->
+                        val p = GeoMath.destination(c.position, k * 10.0, c.accuracyM)
+                        "[${p.lon},${p.lat}]"
+                    }
+                    """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Polygon","coordinates":[[$ring]]}}]}"""
+                }
+            }
+            val circleSource = rememberGeoJsonSource(GeoJsonData.JsonString(circleJson))
+            FillLayer(id = "noise-accuracy", source = circleSource, color = const(Color(0xFF1A73E8)), opacity = const(0.15f), outlineColor = const(Color(0xFF1A73E8)))
             val truthSource = rememberGeoJsonSource(GeoJsonData.JsonString(truthJson))
             LineLayer(id = "noise-truth", source = truthSource, color = const(Color(0xFF202124)), width = const(2.dp))
             val noisySource = rememberGeoJsonSource(GeoJsonData.JsonString(noisyJson))

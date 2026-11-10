@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 9 (GPS noise) — 0.9.0 built, CI; awaiting phone test. Also in 0.9.0: street-zone exit fix and real routes in the grey context. Stages 1–7 verified on device; Stage 8 rules (0.8.1–0.8.3) reviewed on device by the user._
+_Last updated: 2026-11-10 — Stage 9 (GPS noise) — 0.9.1 built, CI; awaiting phone test. Also in 0.9.0: street-zone exit fix and real routes in the grey context. Stages 1–7 verified on device; Stage 8 rules (0.8.1–0.8.3) reviewed on device by the user._
 
 ## Done
 ### Stage 9 — GPS noise (0.9.0)
@@ -340,8 +340,18 @@ missed × 2. The per-environment sliders multiply σ and the accuracy range on t
 **Measured (1 h stationary, open sky, 5 seeds):** 68th-percentile error 3.5–4.8 m against a median reported
 accuracy of 3.6–4.3 m (all within ±25 %); lag-1 autocorrelation 0.955–0.972 against φ = 0.967.
 
-**Not done:** per-step altitude base (altitude is still truth = 0 + noise); the accuracy circle isn't drawn in
-the debug overlay; a missed fix is skipped rather than repeating the last one.
+**0.9.1 additions:**
+- **Base altitude per step.** `Segment.altitudeM` (optional; null = automatic). Automatic = the real location's
+  altitude captured before mocking, passed as `TimelinePlan.trajectory(baseAltitudeM)`. `TimelineTrajectory`
+  sets every state's altitude to the step's base, blended linearly from the previous step's over the first 30 s
+  (`ALTITUDE_BLEND_S`), so there's no vertical jump. The noise model adds its vertical error on top. Card button
+  "Altitude: auto / N m" opens a dialog (empty = automatic). Standalone zones now also play at the real location's
+  altitude (`WithAltitude`). Still file format v1 (optional field).
+- **Accuracy circle in the debug overlay:** a translucent blue circle with the reported accuracy radius around
+  the injected position.
+
+**Not done:** a missed fix is skipped rather than repeating the last one; altitude doesn't follow terrain along a
+route (one base value per step).
 
 **File format:** `Segment.environment` is a new optional field in timeline files. Still **version 1** (older
 files load with null; an older app ignores the field).

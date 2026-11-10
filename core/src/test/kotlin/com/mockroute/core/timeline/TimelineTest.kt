@@ -201,6 +201,22 @@ class TimelineTest {
     }
 
     @Test
+    fun perStepAltitudeBlendsFromThePreviousStep() = runBlocking {
+        var t = fullTimeline(1)
+        t = t.replaceKeepingFixed(1, t.segments[1].withAltitude(712.0)) // the indoor zone is upstairs
+        val plan = TimelinePlanner.plan(t, 1_794_000_000L, sources)
+        val traj = assertNotNull(plan.trajectory(baseAltitudeM = 650.0))
+        val s1 = plan.segments[1].startOffsetS
+        assertEquals(650.0, traj.stateAt(10.0).altitudeM)            // step 1: base
+        assertEquals(650.0, traj.stateAt(s1).altitudeM, 1e-6)        // boundary: no jump
+        assertEquals(681.0, traj.stateAt(s1 + 15).altitudeM, 1e-6)   // half-way through the 30 s blend
+        assertEquals(712.0, traj.stateAt(s1 + 40).altitudeM)         // the step's own altitude
+        val s2 = plan.segments[2].startOffsetS
+        assertEquals(650.0, traj.stateAt(s2 + 31).altitudeM)         // back to base afterwards
+        assertEquals(t, TimelineCodec.decode(TimelineCodec.encode(t)))
+    }
+
+    @Test
     fun gpxHasTimestampedPoints() = runBlocking {
         val plan = TimelinePlanner.plan(fullTimeline(1), 1_794_000_000L, sources)
         val traj = assertNotNull(plan.trajectory())

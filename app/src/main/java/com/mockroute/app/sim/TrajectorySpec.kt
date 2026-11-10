@@ -47,9 +47,8 @@ sealed interface TrajectorySpec {
     }
 
     /** Stage 6: an INDOOR zone wander plan (handed over in-process like [Plan]). */
-    data class Zone(val zone: com.mockroute.core.zone.ZonePlan) : TrajectorySpec {
-        override val altitudeM: Double get() = 0.0
-        override fun build(): Trajectory = zone
+    data class Zone(val zone: com.mockroute.core.zone.ZonePlan, override val altitudeM: Double = 0.0) : TrajectorySpec {
+        override fun build(): Trajectory = com.mockroute.core.trajectory.WithAltitude(zone, altitudeM)
         override val label: String get() = "Wandering indoors"
     }
 

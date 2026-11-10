@@ -64,6 +64,7 @@ fun TimelineScreen(vm: MainViewModel, onBack: () -> Unit, onEditOnMap: () -> Uni
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var pauseEditing by remember { mutableStateOf<Int?>(null) }
+    var altitudeEditing by remember { mutableStateOf<Int?>(null) }
     var showSave by remember { mutableStateOf(false) }
     var showLoad by remember { mutableStateOf(false) }
     val plan = (planState as? TimelinePlanState.Planned)?.plan
@@ -134,6 +135,7 @@ fun TimelineScreen(vm: MainViewModel, onBack: () -> Unit, onEditOnMap: () -> Uni
                     onReroll = { tc.reroll(i) },
                     onResetAuto = { tc.resetToAuto(i) },
                     onEnvironment = { tc.cycleEnvironment(i) },
+                    onAltitude = { altitudeEditing = i },
                     onPlayFrom = { vm.playTimeline(i) },
                     onSnap = tc::fixSnap,
                     onConnector = tc::fixConnector,
@@ -200,6 +202,43 @@ fun TimelineScreen(vm: MainViewModel, onBack: () -> Unit, onEditOnMap: () -> Uni
         val p = t.segments.getOrNull(i) as? Segment.Pause
         if (p == null) pauseEditing = null else PauseDialog(p, onDismiss = { pauseEditing = null }) { tc.replace(i, it); pauseEditing = null }
     }
+    altitudeEditing?.let { i ->
+        val seg = t.segments.getOrNull(i)
+        if (seg == null) altitudeEditing = null else {
+            var text by remember(i) { mutableStateOf(seg.altitudeM?.roundToInt()?.toString() ?: "") }
+            AlertDialog(
+                onDismissRequest = { altitudeEditing = null },
+                title = { Text("Altitude of this step") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = text,
+                            onValueChange = { v -> text = v.filter { it.isDigit() || it == '-' }.take(5) },
+                            label = { Text("Metres above sea level") },
+                            singleLine = true,
+                        )
+                        Text(
+                            "Leave empty for automatic: the altitude of your real location. A different altitude is " +
+                                "reached gradually over the step's first 30 s (e.g. an upper floor).",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        tc.setAltitude(i, text.toDoubleOrNull()?.coerceIn(-500.0, 9000.0))
+                        altitudeEditing = null
+                    }) { Text("Save") }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        tc.setAltitude(i, null)
+                        altitudeEditing = null
+                    }) { Text("Automatic") }
+                },
+            )
+        }
+    }
     if (showSave) {
         var name by remember { mutableStateOf(t.name) }
         AlertDialog(
@@ -256,6 +295,7 @@ private fun SegmentCard(
     onReroll: () -> Unit,
     onResetAuto: () -> Unit,
     onEnvironment: () -> Unit,
+    onAltitude: () -> Unit,
     onPlayFrom: () -> Unit,
     onSnap: (Issue) -> Unit,
     onConnector: (Issue) -> Unit,
@@ -321,6 +361,7 @@ private fun SegmentCard(
                 TextButton(onClick = onReroll) { Text("Re-roll") }
                 // GPS reception for the noise model: automatic (indoor zone = indoor, others = urban) or forced.
                 TextButton(onClick = onEnvironment) { Text("GPS: ${seg.environment?.label ?: "auto"}") }
+                TextButton(onClick = onAltitude) { Text("Altitude: ${seg.altitudeM?.let { "${it.roundToInt()} m" } ?: "auto"}") }
                 TextButton(onClick = onPlayFrom, enabled = plan?.playable == true && !stale) { Text("Play from here") }
                 if (onDelete != null) TextButton(onClick = onDelete) { Text("Delete") }
             }

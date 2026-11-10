@@ -97,7 +97,7 @@ private fun NoiseSettingsSection(vm: MainViewModel) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("Debug overlay", style = MaterialTheme.typography.bodyMedium)
-                Text("Show the true path (black) and the injected points (purple; red = jump) on the map", style = MaterialTheme.typography.bodySmall)
+                Text("Show the true path (black), the injected points (purple; red = jump) and the accuracy circle (blue) on the map", style = MaterialTheme.typography.bodySmall)
             }
             Switch(checked = n.debugOverlay, onCheckedChange = { on -> vm.setNoise { it.copy(debugOverlay = on) } })
         }

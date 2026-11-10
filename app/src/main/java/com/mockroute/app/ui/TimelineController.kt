@@ -108,6 +108,9 @@ class TimelineController(
         t.replaceKeepingFixed(i, s.withEnvironment(next))
     }
 
+    /** Base altitude of step [i] (null = automatic: the real location's altitude). */
+    fun setAltitude(i: Int, a: Double?) = edit { t -> t.segments.getOrNull(i)?.let { t.replaceKeepingFixed(i, it.withAltitude(a)) } ?: t }
+
     /** Back to data-driven speed & time for step [i]. */
     fun resetToAuto(i: Int) = edit { t ->
         when (val s = t.segments.getOrNull(i)) {

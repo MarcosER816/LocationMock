@@ -60,7 +60,11 @@ class TimelinePlan(val timeline: Timeline, val startEpochS: Long, val segments: 
     /** Stale if any segment changed since planning. */
     fun isStaleFor(t: Timeline): Boolean = t.segments.size != segments.size || t.segments.indices.any { t.segments[it] != segments[it].segment }
 
-    fun trajectory(): TimelineTrajectory? = if (playable) TimelineTrajectory(segments.map { TimelineTrajectory.Part(it.trajectory!!, it.startOffsetS, it.durationS, label(it), it.segment.environment) }) else null
+    /** [baseAltitudeM]: altitude for steps without their own (normally the real location's altitude). */
+    fun trajectory(baseAltitudeM: Double = 0.0): TimelineTrajectory? = if (playable) TimelineTrajectory(
+        segments.map { TimelineTrajectory.Part(it.trajectory!!, it.startOffsetS, it.durationS, label(it), it.segment.environment, it.segment.altitudeM) },
+        baseAltitudeM,
+    ) else null
 
     fun label(p: PlannedSegment): String = when (p.segment) {
         is Segment.Route -> "Route"
@@ -212,7 +216,7 @@ object TimelinePlanner {
  * All segments on one global clock. stateAt(t) finds the segment by binary search on its start offset and asks it
  * for t − start. Supports "start at segment k" ([startOf]) and skipping ([nextStart]).
  */
-class TimelineTrajectory(val parts: List<Part>) : Trajectory {
+class TimelineTrajectory(val parts: List<Part>, val baseAltitudeM: Double = 0.0) : Trajectory {
     class Part(
         val trajectory: Trajectory,
         val startS: Double,
@@ -220,7 +224,26 @@ class TimelineTrajectory(val parts: List<Part>) : Trajectory {
         val label: String,
         /** Per-step override of the reception environment (null = the trajectory's own). */
         val environment: com.mockroute.core.noise.Environment? = null,
+        /** Base altitude of this step (null = the timeline's base altitude). */
+        val altitudeM: Double? = null,
     )
+
+    /**
+     * Altitude at [t]: the step's base altitude (or the timeline's), blended linearly from the previous step's
+     * over the first [ALTITUDE_BLEND_S] seconds so a different altitude doesn't appear as a vertical jump.
+     */
+    fun altitudeAt(t: Double): Double {
+        val i = indexAt(t)
+        val cur = parts[i].altitudeM ?: baseAltitudeM
+        if (i == 0) return cur
+        val prev = parts[i - 1].altitudeM ?: baseAltitudeM
+        val f = ((t - parts[i].startS) / ALTITUDE_BLEND_S).coerceIn(0.0, 1.0)
+        return prev + (cur - prev) * f
+    }
+
+    companion object {
+        const val ALTITUDE_BLEND_S = 30.0
+    }
 
     override fun environmentAt(tSeconds: Double): com.mockroute.core.noise.Environment {
         val t = tSeconds.coerceAtLeast(0.0)
@@ -248,7 +271,7 @@ class TimelineTrajectory(val parts: List<Part>) : Trajectory {
         val t = tSeconds.coerceAtLeast(0.0)
         val i = indexAt(t)
         val p = parts[i]
-        val s = p.trajectory.stateAt((t - p.startS).coerceAtMost(p.durationS))
+        val s = p.trajectory.stateAt((t - p.startS).coerceAtMost(p.durationS)).copy(altitudeM = altitudeAt(t))
         return if (t >= durationSeconds) s.copy(speedMps = 0.0) else s
     }
 
