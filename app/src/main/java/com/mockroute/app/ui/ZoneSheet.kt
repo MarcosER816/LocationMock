@@ -30,6 +30,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.mockroute.core.zone.Polygon2
 import com.mockroute.core.zone.WanderMode
+import com.mockroute.core.zone.ZoneKind
+import com.mockroute.core.route.RoutingProfile
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -47,6 +50,7 @@ fun ZoneSheet(
     val z = vm.zone
     val def = state.def
     var show3d by remember { mutableStateOf(false) }
+    val streets = def.kind == ZoneKind.Streets
     Card(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
@@ -55,6 +59,18 @@ fun ZoneSheet(
             Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // Stage 7: indoor (free wandering) vs streets (roads only); profile for streets.
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(selected = !streets, onClick = { vm.setZoneKind(ZoneKind.Indoor) }, label = { Text("Indoor") })
+                FilterChip(selected = streets, onClick = { vm.setZoneKind(ZoneKind.Streets) }, label = { Text("Streets") })
+                if (streets) {
+                    Text("·", style = MaterialTheme.typography.bodySmall)
+                    RoutingProfile.entries.forEach { p ->
+                        FilterChip(selected = def.profile == p, onClick = { vm.setZoneProfile(p) }, label = { Text(p.label) })
+                    }
+                }
+            }
+            if (streets && def.closed) RoadsRow(vm, def)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ZoneTool.entries.forEach { t ->
                     val label = when (t) {
@@ -101,7 +117,9 @@ fun ZoneSheet(
                     }
                 }
                 ZoneTool.Entry, ZoneTool.Exit -> Text(
-                    "Tap near a wall to place ${if (state.tool == ZoneTool.Entry) "entry A" else "exit B"}: it snaps to the edge " +
+                    if (streets) "Tap anywhere inside (or on the edge) to place ${if (state.tool == ZoneTool.Entry) "start A" else "end B"}: " +
+                        "it snaps to the nearest road. Drag A/B to move them along the roads."
+                    else "Tap near a wall to place ${if (state.tool == ZoneTool.Entry) "entry A" else "exit B"}: it snaps to the edge " +
                         "(never inside). Drag A/B to slide them along the walls.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -113,16 +131,26 @@ fun ZoneSheet(
                 Text(String.format(Locale.US, "Pause at a stop: %.0f %% chance, mean %.0f s", def.dwellProbability * 100, def.dwellMeanS), style = MaterialTheme.typography.bodySmall)
                 Slider(value = def.dwellProbability.toFloat(), onValueChange = { z.setDwellProbability(it.toDouble()) }, valueRange = 0f..1f)
                 Slider(value = def.dwellMeanS.toFloat(), onValueChange = { z.setDwellMean(it.roundToInt().toDouble()) }, valueRange = 5f..180f)
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Side-to-side wobble", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                    Switch(checked = def.wobble, onCheckedChange = z::setWobble)
+                if (!streets) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Side-to-side wobble", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        Switch(checked = def.wobble, onCheckedChange = z::setWobble)
+                    }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     WanderMode.entries.forEach { m ->
                         FilterChip(
                             selected = def.mode == m,
                             onClick = { z.setMode(m) },
-                            label = { Text(if (m == WanderMode.Waypoints) "Jump between hotspots" else "Drift (Langevin)") },
+                            label = {
+                                Text(
+                                    when {
+                                        m == WanderMode.Waypoints -> "Jump between hotspots"
+                                        streets -> "Random walk (biased)"
+                                        else -> "Drift (Langevin)"
+                                    },
+                                )
+                            },
                         )
                     }
                 }
@@ -163,6 +191,42 @@ fun ZoneSheet(
             text = { if (grid != null) Surface3D(grid, 40) else Text("Close the shape first.") },
             confirmButton = { TextButton(onClick = { show3d = false }) { Text("Close") } },
         )
+    }
+}
+
+@Composable
+private fun RoadsRow(vm: MainViewModel, def: com.mockroute.core.zone.ZoneDefinition) {
+    val status by vm.roads.status.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val zoneStatus by vm.zonePlanner.status.collectAsStateWithLifecycle()
+    // Re-read the built graph whenever a new zone plan was computed (that's when graphs get (re)built).
+    val graph = remember(zoneStatus, status) { vm.roads.lastGraph() }
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                when (val s = status) {
+                    RoadsStatus.None -> "Roads not loaded"
+                    RoadsStatus.Loading -> "Loading roads from OpenStreetMap (1 query)…"
+                    is RoadsStatus.Error -> s.message
+                    is RoadsStatus.Ready -> {
+                        val age = (System.currentTimeMillis() - s.savedAtMs) / 86_400_000
+                        val g = graph?.let { " · ${it.edgeCount / 2}+ road segments for ${def.profile.label.lowercase()}" } ?: ""
+                        (if (s.fromCache) "Roads cached ${if (age == 0L) "today" else "$age d ago"}" else "Roads loaded now") + g
+                    }
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (status is RoadsStatus.Error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (vm.roads.coverageStale(def)) {
+                Text("The shape grew beyond the loaded roads: tap Refresh roads.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            Text(
+                "Overpass today: ${vm.overpassRequestsToday(settings)} / ${com.mockroute.app.net.OverpassClient.DAILY_LIMIT}",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+            )
+        }
+        OutlinedButton(onClick = vm::refreshRoads, enabled = status !is RoadsStatus.Loading) { Text("Refresh roads") }
     }
 }
 

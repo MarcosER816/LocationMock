@@ -158,7 +158,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         zone.state.map { it.def }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, com.mockroute.core.zone.ZoneDefinition())
     private val _zonePlanSettings = MutableStateFlow(SegmentPlanSettings.zoneDefaults())
     val zonePlanSettings: StateFlow<SegmentPlanSettings> = _zonePlanSettings.asStateFlow()
-    val zonePlanner = ZonePlanController(viewModelScope, zoneDef, _zonePlanSettings)
+    // Stage 7: street-zone roads (Overpass, cached 30 days).
+    val overpass = com.mockroute.app.net.OverpassClient(app)
+    val roads = RoadController(viewModelScope, repo, overpass) { polygon -> zone.setRoadsPolygon(polygon) }
+    val zonePlanner = ZonePlanController(viewModelScope, zoneDef, _zonePlanSettings, roads)
+
+    fun overpassRequestsToday(s: com.mockroute.app.data.AppSettings?): Int =
+        if (s != null && s.overpassRequestDay == java.time.LocalDate.now().toString()) s.overpassRequestCount else 0
+
+    /** Manual "Refresh roads": exactly one Overpass query for the current shape. */
+    fun refreshRoads() = roads.load(zone.state.value.def, force = true, requestsToday = overpassRequestsToday(settings.value))
+
+    fun setZoneKind(kind: com.mockroute.core.zone.ZoneKind) {
+        zone.setKind(kind)
+        _zonePlanSettings.value = if (kind == com.mockroute.core.zone.ZoneKind.Indoor) SegmentPlanSettings.zoneDefaults()
+        else SegmentPlanSettings.streetDefaults(zone.state.value.def.profile)
+    }
+
+    fun setZoneProfile(p: com.mockroute.core.route.RoutingProfile) {
+        zone.setProfile(p)
+        if (zone.state.value.def.kind == com.mockroute.core.zone.ZoneKind.Streets) _zonePlanSettings.value = SegmentPlanSettings.streetDefaults(p)
+    }
 
     fun updateZonePlan(transform: (SegmentPlanSettings) -> SegmentPlanSettings) {
         _zonePlanSettings.value = transform(_zonePlanSettings.value)
@@ -181,6 +201,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun initZone() {
+        // Street zone: load roads (cache first — 0 requests if cached) whenever a closed street zone is shown,
+        // and snap A/B to the nearest road once the graph exists.
+        viewModelScope.launch {
+            zoneDef.map { Triple(it.kind, it.closed, it.roadsPolygon) }.distinctUntilChanged().collect { (kind, closed, _) ->
+                if (kind == com.mockroute.core.zone.ZoneKind.Streets && closed && roads.status.value !is RoadsStatus.Loading) {
+                    roads.load(zone.state.value.def, force = false, requestsToday = overpassRequestsToday(settings.value))
+                }
+            }
+        }
+        viewModelScope.launch {
+            zonePlanner.status.collect {
+                val g = roads.lastGraph()
+                val f = zone.state.value.frame
+                val hadSnapper = zone.roadSnapper != null
+                zone.roadSnapper = if (g != null && f != null && g.nodeCount > 0) { p ->
+                    f.toLatLon(g.snap(f.toLocal(p)).point)
+                } else null
+                // First time roads are available: show A/B where they really start/end (on the road).
+                if (!hadSnapper && zone.roadSnapper != null) zone.resnapEndpoints()
+            }
+        }
         viewModelScope.launch {
             repo.zoneDefinition()?.let(zone::load)
             repo.zonePlan()?.let { _zonePlanSettings.value = it }

@@ -84,10 +84,16 @@ fun Modifier.mapHandlesDrag(
     }
 }
 
-/** All INDOOR-zone map layers. Must be called inside the MaplibreMap content. */
+/** All zone map layers (indoor and streets). Must be called inside the MaplibreMap content. */
 @Composable
-fun ZoneLayers(state: ZoneEditorState, status: ZoneStatus) {
+fun ZoneLayers(state: ZoneEditorState, status: ZoneStatus, roads: com.mockroute.core.streets.RoadGraph? = null) {
     val def = state.def
+    // Stage 7: grey overlay of the usable roads (street zones).
+    val roadsJson = remember(roads, def.kind) {
+        if (roads == null || def.kind != com.mockroute.core.zone.ZoneKind.Streets) EMPTY else roadsJson(roads, state)
+    }
+    val roadSource = rememberGeoJsonSource(GeoJsonData.JsonString(roadsJson))
+    LineLayer(id = "zone-roads", source = roadSource, color = const(Color(0xFF616161)), width = const(4.dp), opacity = const(0.55f), cap = const(LineCap.Round), join = const(LineJoin.Round))
     // Outline / fill.
     val shapeJson = remember(def.vertices, def.closed) { shapeJson(def.vertices, def.closed) }
     val shape = rememberGeoJsonSource(GeoJsonData.JsonString(shapeJson))
@@ -143,6 +149,21 @@ fun ZoneLayers(state: ZoneEditorState, status: ZoneStatus) {
     // Entry/exit, always on the edge.
     EndpointLayers("zone-a", def.entry, "A", Color(0xFF1E8E3E))
     EndpointLayers("zone-b", def.exit, "B", Color(0xFFD93025))
+}
+
+/** Each undirected road once (twin edges skipped), as LineStrings. */
+private fun roadsJson(g: com.mockroute.core.streets.RoadGraph, state: ZoneEditorState): String {
+    val f = state.frame ?: return EMPTY
+    val sb = StringBuilder("""{"type":"FeatureCollection","features":[""")
+    var first = true
+    for ((i, e) in g.edges.withIndex()) {
+        if (e.twin in 0 until i) continue
+        if (!first) sb.append(',')
+        first = false
+        sb.append("""{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[""")
+        sb.append(coords(e.points.map(f::toLatLon))).append("]}}")
+    }
+    return sb.append("]}").toString()
 }
 
 /** Draggable handles for the current tool. */

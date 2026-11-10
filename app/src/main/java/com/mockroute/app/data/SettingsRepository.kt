@@ -44,6 +44,9 @@ data class AppSettings(
     /** TomTom requests made today: (yyyy-MM-dd, count). */
     val trafficRequestDay: String = "",
     val trafficRequestCount: Int = 0,
+    /** Overpass queries made today: (yyyy-MM-dd, count). */
+    val overpassRequestDay: String = "",
+    val overpassRequestCount: Int = 0,
 )
 
 class SettingsRepository(private val context: Context) {
@@ -66,6 +69,8 @@ class SettingsRepository(private val context: Context) {
         val googleKey = stringPreferencesKey("google_routes_api_key")
         val trafficDay = stringPreferencesKey("traffic_request_day")
         val trafficCount = intPreferencesKey("traffic_request_count")
+        val overpassDay = stringPreferencesKey("overpass_request_day")
+        val overpassCount = intPreferencesKey("overpass_request_count")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
@@ -123,6 +128,12 @@ class SettingsRepository(private val context: Context) {
         it[Keys.trafficCount] = count + 1
     }
 
+    suspend fun countOverpassRequest(today: String) = context.dataStore.edit {
+        val count = if (it[Keys.overpassDay] == today) (it[Keys.overpassCount] ?: 0) else 0
+        it[Keys.overpassDay] = today
+        it[Keys.overpassCount] = count + 1
+    }
+
     suspend fun setLastRealLocation(fix: RealFix) = context.dataStore.edit {
         it[Keys.realLat] = fix.lat
         it[Keys.realLon] = fix.lon
@@ -150,6 +161,8 @@ class SettingsRepository(private val context: Context) {
             googleRoutesApiKey = this[Keys.googleKey] ?: "",
             trafficRequestDay = this[Keys.trafficDay] ?: "",
             trafficRequestCount = this[Keys.trafficCount] ?: 0,
+            overpassRequestDay = this[Keys.overpassDay] ?: "",
+            overpassRequestCount = this[Keys.overpassCount] ?: 0,
         )
     }
 }

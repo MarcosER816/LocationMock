@@ -200,7 +200,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             onMapClick = { pos, offset -> currentOnClick(pos, offset) },
             onMapLongClick = { pos, offset -> currentOnLongClick(pos, offset) },
         ) {
-            if (indoor) ZoneLayers(zoneState, zoneStatus)
+            if (indoor) ZoneLayers(zoneState, zoneStatus, remember(zoneStatus) { vm.roads.lastGraph() })
 
             // Route being edited (simplified for display).
             val editedResult = editor.result

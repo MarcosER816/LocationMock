@@ -49,7 +49,7 @@ import org.maplibre.spatialk.geojson.Position
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private enum class ToolbarItem(val label: String) { Explore("Explore"), P2P("A→B"), Streets("Streets"), Free("Free"), Indoor("Indoor") }
+private enum class ToolbarItem(val label: String) { Explore("Explore"), P2P("A→B"), Streets("Streets"), Free("Free"), Indoor("Zone") }
 
 @Composable
 fun ModeToolbar(

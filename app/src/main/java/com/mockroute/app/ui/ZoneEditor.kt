@@ -70,12 +70,45 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
         }
     }
 
-    /** Snap to the nearest point of the closed polygon's edge (A/B are never inside). */
+    /** Stage 7: snaps a point to the nearest road inside the zone (set by the ViewModel when roads are loaded). */
+    @Volatile var roadSnapper: ((LatLon) -> LatLon?)? = null
+
+    /**
+     * Indoor: nearest point of the polygon's edge (A/B never inside). Streets: A/B may be inside or on the edge —
+     * outside points are pulled onto the edge first — and then onto the nearest road when roads are loaded.
+     */
     fun snap(p: LatLon): LatLon? {
         val s = _state.value
         val f = s.frame ?: return null
         val poly = s.polygon ?: return null
-        return ZonePlanner.snapToEdge(poly, f, p)
+        if (s.def.kind == com.mockroute.core.zone.ZoneKind.Indoor) return ZonePlanner.snapToEdge(poly, f, p)
+        val local = f.toLocal(p)
+        val inside = if (poly.contains(local, 0.0)) p else ZonePlanner.snapToEdge(poly, f, p)
+        return roadSnapper?.invoke(inside) ?: inside
+    }
+
+    fun setKind(kind: com.mockroute.core.zone.ZoneKind) {
+        update { it.copy(kind = kind) }
+        resnapEndpoints()
+    }
+
+    fun setProfile(profile: com.mockroute.core.route.RoutingProfile) = update { it.copy(profile = profile) }
+
+    fun setRoadsPolygon(v: List<LatLon>) = update { it.copy(roadsPolygon = v) }
+
+    /**
+     * Re-snap A/B after the shape, kind or roads changed. Only moves a point by > 0.5 m: re-snapping an already
+     * snapped point must not change the definition (that would trigger re-planning → re-snapping → … forever).
+     */
+    fun resnapEndpoints() {
+        fun moved(p: LatLon?): LatLon? {
+            val q = p?.let(::snap) ?: return p
+            return if (com.mockroute.core.geo.GeoMath.haversineMeters(p, q) > 0.5) q else p
+        }
+        val d = _state.value.def
+        val e = moved(d.entry)
+        val x = moved(d.exit)
+        if (e != d.entry || x != d.exit) update { it.copy(entry = e, exit = x) }
     }
 
     /** A tap (not a drag) on a handle: the FIRST corner closes the shape; other corners do nothing. */
