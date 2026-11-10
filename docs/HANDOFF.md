@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 6 (indoor zone + Gaussian-mixture 3D editor) — 0.6.1 (close-shape fix) pending phone re-test. Stages 1–5 verified on device._
+_Last updated: 2026-11-10 — Stage 6 (indoor zone + Gaussian-mixture 3D editor) — verified on device (0.6.1). Stages 1–6 verified on device._
 
 ## Done
 ### Stage 6 — INDOOR zone + Gaussian-mixture editor (0.6.0)
@@ -233,6 +233,9 @@ optional API-key secrets → BuildConfig.
   - **Close shape** is always enabled and explains why if it can't close.
   - The drag gestures (`endpointDrag`, `mapHandlesDrag`) moved from the Box onto the **MaplibreMap modifier**, so
     taps on sheet buttons near a projected corner are no longer swallowed.
+
+- **Phone result 2026-11-10 (0.6.1):** shape closes; "everything seems fine". The fps figure of the 3D preview
+  wasn't reported; ask for it if performance comes up.
 
 ## Stage 6 API (zone, `:core` package `zone`)
 - `Vec2`, `LocalFrame(origin)` (equirectangular local metres, exact inverse).
