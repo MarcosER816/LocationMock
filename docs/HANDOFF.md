@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — 0.5.2 (corridor first, cache fix) pending phone re-check. Stages 1–4 verified on device._
+_Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — verified on device (0.5.2: corridor first, cache hits). Stages 1–4 verified on device._
 
 ## Done
 ### Stage 5 — traffic-aware Car/Bus (0.5.0)
@@ -168,6 +168,9 @@ optional API-key secrets → BuildConfig.
   (`CachedSample(savedAtMs, sample)` and `CachedRoute(savedAtMs, result)`, in `:core` because only `:core`
   applies the serialization plugin). Old-format files fail to decode and are deleted once. Eviction now uses
   file names, not timestamps. The ORS route cache had the same pattern and is fixed too.
+- **Phone result 2026-11-10: fixed.** Repeating a departure now comes from the cache, which confirms the
+  `lastModified()` TTL was the cause. Lesson: **never rely on File.lastModified() for cache expiry on this device;
+  store timestamps in the file.**
 - **Diagnostics line** in the traffic row: "cache: route ab12cd · N samples stored · cache problem: …". If misses
   continue: the same route key with N growing → check bins/time; the route key changing between fetches → the
   geometry changes (e.g. A re-captured from a new GPS fix).

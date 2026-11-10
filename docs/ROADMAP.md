@@ -14,7 +14,7 @@ Tick a stage (`[x]`) only when its acceptance checks pass and CI is green. Detai
 - [x] **Stage 4 — Speed profile + gradient plan + playback.** _(0.4.0; phone-tested 2026-11-10)_ Sample T; Gaussian-copula OU speed profile + accel
   limiting + bisection to hit T; green→yellow→red route rendering with duration label; play the plan through the
   mock service at 1 Hz.
-- [x] **Stage 5 — Traffic-aware car/bus.** _(0.5.0; CI; phone test script in HANDOFF.md)_ `TrafficProvider` (TomTom default, Google optional); Car/Bus auto-settings.
+- [x] **Stage 5 — Traffic-aware car/bus.** _(0.5.2; phone-tested 2026-11-10)_ `TrafficProvider` (TomTom default, Google optional); Car/Bus auto-settings.
 - [ ] **Stage 6 — Indoor zone + Gaussian-mixture 3D editor.** Polygon zone, A/B on boundary, biased wandering by a
   user-edited 2D Gaussian mixture with 3D preview.
 - [ ] **Stage 7 — Street zone.** Overpass `RoadGraphProvider` (cached, ≤100 queries/day); wander on streets inside
