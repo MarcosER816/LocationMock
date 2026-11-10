@@ -117,7 +117,11 @@ fun ZoneSheet(
                         TextButton(onClick = z::clear) { Text("Clear") }
                     }
                 }
-                ZoneTool.Entry, ZoneTool.Exit -> Text(
+                ZoneTool.Entry, ZoneTool.Exit -> if (state.tool == ZoneTool.Exit && z.lockExit || state.tool == ZoneTool.Entry && z.lockEntry) Text(
+                    "This point is fixed by the neighbouring step and can't be moved here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                ) else Text(
+                    (if (state.tool == ZoneTool.Exit && z.exitNotPlaced(def)) "The end point isn't placed yet (it's still on the start point). " else "") +
                     if (streets) "Tap anywhere inside (or on the edge) to place ${if (state.tool == ZoneTool.Entry) "start A" else "end B"}: " +
                         "it snaps to the nearest road. Drag A/B to move them along the roads."
                     else "Tap near a wall to place ${if (state.tool == ZoneTool.Entry) "entry A" else "exit B"}: it snaps to the edge " +

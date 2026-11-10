@@ -172,11 +172,13 @@ private fun roadsJson(g: com.mockroute.core.streets.RoadGraph, state: ZoneEditor
 }
 
 /** Draggable handles for the current tool. */
-fun zoneHandles(state: ZoneEditorState): List<Pair<String, LatLon>> {
+fun zoneHandles(state: ZoneEditorState, lockEntry: Boolean = false, lockExit: Boolean = false): List<Pair<String, LatLon>> {
     val d = state.def
     val out = ArrayList<Pair<String, LatLon>>()
-    d.entry?.let { out += "entry" to it }
-    d.exit?.let { out += "exit" to it }
+    // Fixed points are NOT handles: a new zone's exit starts on top of its fixed entry, and the locked entry used to
+    // grab the drag, so the exit could never be moved. The free exit goes first so it wins when they coincide.
+    if (!lockExit) d.exit?.let { out += "exit" to it }
+    if (!lockEntry) d.entry?.let { out += "entry" to it }
     if (d.closed && state.tool == ZoneTool.Hotspots) state.components().forEachIndexed { i, c -> out += "c$i" to c.mean }
     if (state.tool == ZoneTool.Draw || !d.closed) d.vertices.forEachIndexed { i, v -> out += "v$i" to v }
     return out

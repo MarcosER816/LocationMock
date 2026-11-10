@@ -99,6 +99,13 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
         return if (onRoad != null && poly.contains(f.toLocal(onRoad), STREET_EDGE_TOLERANCE_M)) onRoad else inside
     }
 
+    /** True while the exit hasn't been given its own place (missing, or still on top of the entry). */
+    fun exitNotPlaced(d: ZoneDefinition): Boolean {
+        val e = d.entry
+        val x = d.exit ?: return true
+        return e != null && com.mockroute.core.geo.GeoMath.haversineMeters(e, x) < 1.0
+    }
+
     /** Called with a short explanation when an edit is refused (shown to the user). */
     @Volatile var onRefused: ((String) -> Unit)? = null
 
@@ -174,7 +181,13 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
                     exit = if (lockExit) it.def.exit else it.def.exit?.let(::snap),
                     components = s.components(),
                 ),
-                tool = if (it.def.entry == null) ZoneTool.Entry else ZoneTool.Hotspots,
+                // Next thing to place: the entry if missing; the exit if it's missing or still sitting on the entry
+                // (a new timeline zone starts with exit == entry); otherwise the hotspots.
+                tool = when {
+                    it.def.entry == null && !lockEntry -> ZoneTool.Entry
+                    !lockExit && exitNotPlaced(it.def) -> ZoneTool.Exit
+                    else -> ZoneTool.Hotspots
+                },
             )
         }
         return null

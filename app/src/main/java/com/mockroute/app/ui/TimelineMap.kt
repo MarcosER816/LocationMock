@@ -34,6 +34,7 @@ fun TimelineLayers(t: Timeline, plan: TimelinePlan?) {
             val planned = plan?.segments?.getOrNull(i)?.takeIf { it.segment == seg }?.path
             val pts: List<LatLon> = when {
                 planned != null && planned.size >= 2 -> planned
+                seg is Segment.Route && seg.geometryFresh -> seg.geometry
                 seg is Segment.Route -> seg.inputs
                 else -> listOf(seg.start, seg.end)
             }
@@ -88,7 +89,14 @@ fun TimelineContextLayers(t: Timeline, plan: TimelinePlan?, editing: Int) {
         val feats = t.segments.mapIndexedNotNull { i, seg ->
             if (i == editing || seg is Segment.IndoorZone || seg is Segment.StreetZone || seg is Segment.Pause) return@mapIndexedNotNull null
             val planned = plan?.segments?.getOrNull(i)?.takeIf { it.segment == seg }?.path
-            val pts = if (planned != null && planned.size >= 2) planned else (seg as Segment.Route).inputs
+            // The REAL configured route: the planned path, else the geometry routed in the editor (saved with the
+            // step); straight lines only if it was never routed.
+            val route = seg as Segment.Route
+            val pts = when {
+                planned != null && planned.size >= 2 -> planned
+                route.geometryFresh -> route.geometry
+                else -> route.inputs
+            }
             """{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[${pts.joinToString(",") { "[${it.lon},${it.lat}]" }}]}}"""
         }
         """{"type":"FeatureCollection","features":[${feats.joinToString(",")}]}"""
