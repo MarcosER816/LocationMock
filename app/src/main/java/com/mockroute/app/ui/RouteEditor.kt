@@ -192,6 +192,26 @@ class RouteEditor(
         }
     }
 
+    /** Stage 8: load a timeline route segment into the editor (legs re-routed from the cache). */
+    fun loadSegment(mode: EditMode, snap: Boolean, a: LatLon, b: LatLon, waypoints: List<LatLon>, profile: RoutingProfile) {
+        legJobs.values.forEach { it.cancel() }
+        legJobs.clear()
+        when (mode) {
+            EditMode.PointToPoint -> _state.value = RouteEditorState(mode = mode, profile = profile, a = a, b = b.takeIf { it != a }, aIsRealLocation = false)
+            else -> {
+                _state.value = RouteEditorState(mode = EditMode.Streets, profile = profile, snap = snap)
+                (listOf(a) + waypoints + listOf(b)).distinct().forEach { addWaypoint(it) }
+            }
+        }
+    }
+
+    /** Stage 8: restore the editor exactly as it was before editing a timeline segment. */
+    fun restore(st: RouteEditorState) {
+        legJobs.values.forEach { it.cancel() }
+        legJobs.clear()
+        _state.value = st
+    }
+
     fun undo() {
         val s = _state.value
         if (s.waypoints.isEmpty()) return

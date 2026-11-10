@@ -53,6 +53,17 @@ sealed interface TrajectorySpec {
         override val label: String get() = "Wandering indoors"
     }
 
+    /** Stage 8: a whole timeline on one global clock; playback may start at segment k ([startOffsetS]). */
+    data class Timeline(
+        val trajectory: com.mockroute.core.timeline.TimelineTrajectory,
+        val startOffsetS: Double = 0.0,
+        val name: String = "Timeline",
+    ) : TrajectorySpec {
+        override val altitudeM: Double get() = 0.0
+        override fun build(): Trajectory = trajectory
+        override val label: String get() = name
+    }
+
     fun writeTo(intent: Intent): Intent = intent.apply {
         putExtra(EXTRA_ALT, altitudeM)
         when (val s = this@TrajectorySpec) {
@@ -68,7 +79,7 @@ sealed interface TrajectorySpec {
                 putExtra(EXTRA_TO_LAT, s.to.lat)
                 putExtra(EXTRA_TO_LON, s.to.lon)
             }
-            is Plan, is Zone -> {
+            is Plan, is Zone, is Timeline -> {
                 putExtra(EXTRA_TYPE, TYPE_PLAN)
                 putExtra(EXTRA_PLAN_ID, PlanHandoff.put(s))
             }

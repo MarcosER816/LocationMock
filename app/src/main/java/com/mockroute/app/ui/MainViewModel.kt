@@ -230,6 +230,137 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- Stage 8: timeline -------------------------------------------------------------------------
+    val timelineStore = com.mockroute.app.data.TimelineStore(app)
+    val timelines = TimelineController(
+        viewModelScope, repo, timelineStore, routing, overpass, trafficCache,
+        settings = { settings.value }, realLocation = { realLatLon() },
+    )
+
+    /** Index of the timeline segment currently open in the map editors, or null. */
+    private val _editingSegment = MutableStateFlow<Int?>(null)
+    val editingSegment: StateFlow<Int?> = _editingSegment.asStateFlow()
+    private var savedRouteEditor: RouteEditorState? = null
+    private var savedZone: com.mockroute.core.zone.ZoneDefinition? = null
+    private var savedPlan: SegmentPlanSettings? = null
+    private var savedZonePlan: SegmentPlanSettings? = null
+
+    private val _timelineOnMap = MutableStateFlow(false)
+    val timelineOnMap: StateFlow<Boolean> = _timelineOnMap.asStateFlow()
+    fun showTimelineOnMap(on: Boolean) {
+        _timelineOnMap.value = on
+        if (on) setEditMode(EditMode.Explore)
+    }
+
+    /** Opens segment [i] in the Route or Zone editor on the map (pauses are edited in a dialog). */
+    fun editSegment(i: Int) {
+        val seg = timelines.timeline.value.segments.getOrNull(i) ?: return
+        savedRouteEditor = editor.state.value
+        savedZone = zone.state.value.def
+        savedPlan = _plan.value
+        savedZonePlan = _zonePlanSettings.value
+        _editingSegment.value = i
+        _timelineOnMap.value = false
+        when (seg) {
+            is com.mockroute.core.timeline.Segment.Route -> {
+                val mode = if (seg.mode == com.mockroute.core.timeline.RouteMode.PointToPoint) EditMode.PointToPoint else EditMode.Streets
+                editor.loadSegment(mode, seg.mode != com.mockroute.core.timeline.RouteMode.FreeDraw, seg.start, seg.end, seg.waypoints, seg.profile)
+                _plan.value = seg.settings ?: SegmentPlanSettings.defaults(seg.profile, 1000.0)
+            }
+            is com.mockroute.core.timeline.Segment.IndoorZone -> {
+                zone.load(seg.zone.copy(entry = seg.start, exit = seg.end, kind = com.mockroute.core.zone.ZoneKind.Indoor))
+                _zonePlanSettings.value = seg.settings ?: SegmentPlanSettings.zoneDefaults()
+                editor.setMode(EditMode.Indoor, null)
+            }
+            is com.mockroute.core.timeline.Segment.StreetZone -> {
+                zone.load(seg.zone.copy(entry = seg.start, exit = seg.end, kind = com.mockroute.core.zone.ZoneKind.Streets))
+                _zonePlanSettings.value = seg.settings ?: SegmentPlanSettings.streetDefaults(seg.zone.profile)
+                editor.setMode(EditMode.Indoor, null)
+            }
+            is com.mockroute.core.timeline.Segment.Pause -> _editingSegment.value = null
+        }
+    }
+
+    /** Writes the editor back into the timeline: the edited A/B become shared-point moves (neighbours follow). */
+    fun finishEditingSegment(apply: Boolean) {
+        val i = _editingSegment.value ?: return
+        val seg = timelines.timeline.value.segments.getOrNull(i)
+        if (apply && seg != null) {
+            val updated: com.mockroute.core.timeline.Segment? = when (seg) {
+                is com.mockroute.core.timeline.Segment.Route -> {
+                    val st = editor.state.value
+                    if (st.mode == EditMode.PointToPoint) {
+                        val a = st.a ?: seg.start
+                        seg.copy(start = a, end = st.b ?: a, waypoints = emptyList(), mode = com.mockroute.core.timeline.RouteMode.PointToPoint, profile = st.profile, settings = _plan.value)
+                    } else {
+                        val w = st.waypoints
+                        if (w.size < 2) seg.copy(profile = st.profile, settings = _plan.value)
+                        else seg.copy(
+                            start = w.first(), end = w.last(), waypoints = w.subList(1, w.size - 1),
+                            mode = if (st.snap) com.mockroute.core.timeline.RouteMode.Streets else com.mockroute.core.timeline.RouteMode.FreeDraw,
+                            profile = st.profile, settings = _plan.value,
+                        )
+                    }
+                }
+                is com.mockroute.core.timeline.Segment.IndoorZone, is com.mockroute.core.timeline.Segment.StreetZone -> {
+                    val d = zone.state.value.def
+                    val a = d.entry ?: seg.start
+                    val b = d.exit ?: seg.end
+                    // The kind chip may have been switched while editing: the segment type follows it.
+                    if (d.kind == com.mockroute.core.zone.ZoneKind.Indoor) com.mockroute.core.timeline.Segment.IndoorZone(seg.id, a, b, d, _zonePlanSettings.value, seg.seedOffset)
+                    else com.mockroute.core.timeline.Segment.StreetZone(seg.id, a, b, d, _zonePlanSettings.value, seg.seedOffset)
+                }
+                is com.mockroute.core.timeline.Segment.Pause -> null
+            }
+            updated?.let { timelines.replace(i, it) }
+        }
+        _editingSegment.value = null
+        savedRouteEditor?.let(editor::restore)
+        savedZone?.let(zone::load)
+        _plan.value = savedPlan
+        savedZonePlan?.let { _zonePlanSettings.value = it }
+        savedRouteEditor = null
+        savedZone = null
+    }
+
+    /** Plays the planned timeline from segment [fromSegment] (continuous; one service run). */
+    fun playTimeline(fromSegment: Int = 0) {
+        val st = timelines.plan.value as? TimelinePlanState.Planned
+        val t = timelines.timeline.value
+        val plan = st?.plan
+        when {
+            plan == null -> _message.value = "Tap “Plan all” first"
+            plan.isStaleFor(t) -> _message.value = "The timeline changed since planning — tap “Plan all” again"
+            !plan.playable -> _message.value = "Some segments couldn't be planned: " + plan.segments.mapNotNull { it.error }.joinToString("; ")
+            else -> {
+                val traj = plan.trajectory()!!
+                startWith { _, _ -> TrajectorySpec.Timeline(traj, traj.startOf(fromSegment), t.name) }
+            }
+        }
+    }
+
+    fun skipSegment() = com.mockroute.app.mock.MockLocationService.skip(getApplication())
+
+    suspend fun exportTimelineJson(): java.io.File = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val t = timelines.timeline.value
+        timelineStore.exportFile(t.name, "json", com.mockroute.core.timeline.TimelineCodec.encode(t))
+    }
+
+    suspend fun exportTimelineGpx(): java.io.File? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+        val plan = (timelines.plan.value as? TimelinePlanState.Planned)?.plan ?: return@withContext null
+        val traj = plan.trajectory() ?: return@withContext null
+        timelineStore.exportFile(timelines.timeline.value.name, "gpx", com.mockroute.core.timeline.Gpx.write(timelines.timeline.value.name, traj, plan.startEpochS))
+    }
+
+    fun importTimeline(text: String) {
+        try {
+            timelines.load(com.mockroute.core.timeline.TimelineCodec.decode(text))
+            _message.value = "Timeline imported"
+        } catch (e: com.mockroute.core.timeline.TimelineFormatException) {
+            _message.value = "Import failed: ${e.message}"
+        }
+    }
+
     fun setTomTomKey(key: String) = viewModelScope.launch { repo.setTomTomApiKey(key) }
     fun setGoogleRoutesKey(key: String) = viewModelScope.launch { repo.setGoogleRoutesApiKey(key) }
 

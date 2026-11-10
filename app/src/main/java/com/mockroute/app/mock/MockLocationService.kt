@@ -68,6 +68,7 @@ class MockLocationService : Service() {
             ACTION_PAUSE -> pause()
             ACTION_RESUME -> resume()
             ACTION_STOP -> stopSimulation()
+            ACTION_SKIP -> skip()
             else -> stopSimulation() // null intent = system restart; never resume on our own
         }
         return START_NOT_STICKY
@@ -91,7 +92,8 @@ class MockLocationService : Service() {
         tickJob?.cancel()
         spec = newSpec
         trajectory = newSpec.build()
-        accumulatedSeconds = 0.0
+        // Stage 8: "play from segment k" starts the global clock at that segment.
+        accumulatedSeconds = (newSpec as? TrajectorySpec.Timeline)?.startOffsetS ?: 0.0
         runningSinceMs = SystemClock.elapsedRealtime()
         tickJob = scope.launch {
             if (injector == null) {
@@ -151,6 +153,14 @@ class MockLocationService : Service() {
     private fun simTimeSeconds(): Double {
         val since = runningSinceMs ?: return accumulatedSeconds
         return accumulatedSeconds + (SystemClock.elapsedRealtime() - since) / 1000.0
+    }
+
+    /** Timeline: jump to the start of the next segment (positions stay continuous: it starts where this one ends). */
+    private fun skip() {
+        val tl = trajectory as? com.mockroute.core.timeline.TimelineTrajectory ?: return
+        val next = tl.nextStart(simTimeSeconds()) ?: return
+        accumulatedSeconds = next
+        if (runningSinceMs != null) runningSinceMs = SystemClock.elapsedRealtime()
     }
 
     private fun pause() {
@@ -224,8 +234,10 @@ class MockLocationService : Service() {
         durationS: Double? = null,
         elapsedS: Double = 0.0,
     ): Notification {
+        val timeline = trajectory as? com.mockroute.core.timeline.TimelineTrajectory
         val title = when {
             status == SimStatus.Paused -> "Paused"
+            timeline != null && !finished -> "${spec?.label ?: "Timeline"} · ${timeline.labelAt(elapsedS)}"
             finished && spec !is TrajectorySpec.Static -> "Arrived"
             else -> spec?.label ?: "Simulating"
         }
@@ -264,6 +276,7 @@ class MockLocationService : Service() {
         } else {
             b.addAction(0, getString(R.string.notif_pause), actionIntent(ACTION_PAUSE, 1))
         }
+        if (timeline != null && timeline.nextStart(elapsedS) != null) b.addAction(0, "Skip", actionIntent(ACTION_SKIP, 4))
         b.addAction(0, getString(R.string.notif_stop), actionIntent(ACTION_STOP, 3))
         return b.build()
     }
@@ -283,6 +296,7 @@ class MockLocationService : Service() {
         private const val ACTION_PAUSE = "com.mockroute.app.PAUSE"
         private const val ACTION_RESUME = "com.mockroute.app.RESUME"
         private const val ACTION_STOP = "com.mockroute.app.STOP"
+        private const val ACTION_SKIP = "com.mockroute.app.SKIP"
         private const val EXTRA_USE_GMS = "use_gms"
 
         /** Call only from a visible UI action (foreground-service-from-background rules). */
@@ -298,6 +312,7 @@ class MockLocationService : Service() {
         }
 
         fun pause(context: Context) = send(context, ACTION_PAUSE)
+        fun skip(context: Context) = send(context, ACTION_SKIP)
         fun resume(context: Context) = send(context, ACTION_RESUME)
         fun stop(context: Context) {
             if (SimulationRepository.state.value.isActive) send(context, ACTION_STOP)

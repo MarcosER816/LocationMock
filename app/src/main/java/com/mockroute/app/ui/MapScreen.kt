@@ -85,7 +85,7 @@ private val FallbackGrey = Color(0xFF757575)
 private val HandleGreen = Color(0xFF1E8E3E)
 
 @Composable
-fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> Unit) {
+fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> Unit, onOpenTimeline: () -> Unit = {}) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val sim by vm.simulation.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
@@ -102,6 +102,11 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
     val zoneSeed by vm.zonePlanner.seed.collectAsStateWithLifecycle()
     val zoneLock by vm.zonePlanner.lockTime.collectAsStateWithLifecycle()
     val indoor = editor.mode == EditMode.Indoor
+    val editingSegment by vm.editingSegment.collectAsStateWithLifecycle()
+    val timelineOnMap by vm.timelineOnMap.collectAsStateWithLifecycle()
+    val timeline by vm.timelines.timeline.collectAsStateWithLifecycle()
+    val timelinePlan by vm.timelines.plan.collectAsStateWithLifecycle()
+    val showTimeline = timelineOnMap && editor.mode == EditMode.Explore
     val departure by vm.traffic.departure.collectAsStateWithLifecycle()
     // Tap on the plan line → speed & ETA at that point.
     var inspect by remember { mutableStateOf<PlanInspection?>(null) }
@@ -184,6 +189,14 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     onPreview = { dragPreview = it },
                     onMoved = { which, p -> vm.editor.setEndpoint(which, p) },
                 )
+                // Stage 8: drag a numbered timeline boundary (a point shared by two segments).
+                .mapHandlesDrag(
+                    enabled = showTimeline,
+                    cameraState = cameraState,
+                    handles = timeline.boundaries().mapIndexed { k, p -> "b$k" to p },
+                    onDrag = { id, p -> id.drop(1).toIntOrNull()?.let { vm.timelines.setBoundary(it, p) } },
+                    onTap = { id -> vm.showMessage("Point ${id.drop(1)}: drag it to move it (both neighbouring segments follow)") },
+                )
                 .mapHandlesDrag(
                     enabled = indoor,
                     cameraState = cameraState,
@@ -201,6 +214,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             onMapLongClick = { pos, offset -> currentOnLongClick(pos, offset) },
         ) {
             if (indoor) ZoneLayers(zoneState, zoneStatus, remember(zoneStatus) { vm.roads.lastGraph() })
+            if (showTimeline) TimelineLayers(timeline, (timelinePlan as? TimelinePlanState.Planned)?.plan)
 
             // Route being edited (simplified for display).
             val editedResult = editor.result
@@ -379,6 +393,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             SmallFloatingActionButton(onClick = onOpenSettings) {
                 Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings")
             }
+            SmallFloatingActionButton(onClick = onOpenTimeline) { Text("⏱", style = MaterialTheme.typography.titleMedium) }
             SmallFloatingActionButton(onClick = {
                 if (sim.isActive) {
                     // Don't read the location now: it would be our own mock. Show the stored real fix.
@@ -404,6 +419,32 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars),
         ) {
+            editingSegment?.let { k ->
+                Surface(
+                    Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    shape = MaterialTheme.shapes.large,
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    shadowElevation = 4.dp,
+                ) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Editing timeline segment ${k + 1}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { vm.finishEditingSegment(apply = false) }) { Text("Cancel") }
+                        Button(onClick = {
+                            vm.finishEditingSegment(apply = true)
+                            onOpenTimeline()
+                        }) { Text("Done") }
+                    }
+                }
+            }
+            if (showTimeline && editingSegment == null) {
+                Surface(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), shape = MaterialTheme.shapes.large, shadowElevation = 4.dp) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Timeline “${timeline.name}”: drag the numbered points", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { vm.showTimelineOnMap(false) }) { Text("Hide") }
+                        TextButton(onClick = onOpenTimeline) { Text("Open") }
+                    }
+                }
+            }
             inspect?.let { ins ->
                 Surface(
                     Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
@@ -437,11 +478,15 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                         is TrajectorySpec.Polyline -> (spec.geometry.lengthM - sim.elapsedSeconds * spec.speedMps).coerceAtLeast(0.0)
                         is TrajectorySpec.Plan -> (spec.plan.distanceM - spec.plan.stateAtTime(sim.elapsedSeconds).distanceM).coerceAtLeast(0.0)
                         is TrajectorySpec.Zone -> (spec.zone.plan.distanceM - spec.zone.plan.stateAtTime(sim.elapsedSeconds).distanceM).coerceAtLeast(0.0)
+                        is TrajectorySpec.Timeline -> null
                         else -> null
                     },
                     onPause = vm::pause,
                     onResume = vm::resume,
                     onStop = vm::stop,
+                    onSkip = if (sim.spec is TrajectorySpec.Timeline) vm::skipSegment else null,
+                    timelineLabel = (sim.spec as? TrajectorySpec.Timeline)?.let { "${it.trajectory.labelAt(sim.elapsedSeconds)} · " +
+                        "${(100 * sim.elapsedSeconds / it.trajectory.durationSeconds).toInt().coerceIn(0, 100)} %" },
                 )
             }
             if (indoor && !sim.isActive) {
@@ -595,6 +640,8 @@ private fun SimulationCard(
     onPause: () -> Unit,
     onResume: () -> Unit,
     onStop: () -> Unit,
+    onSkip: (() -> Unit)? = null,
+    timelineLabel: String? = null,
 ) {
     Surface(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
@@ -609,6 +656,7 @@ private fun SimulationCard(
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(String.format(Locale.US, "%.1f km/h", speedKmh), style = MaterialTheme.typography.bodyMedium)
+                timelineLabel?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                 point?.let {
                     Text(
                         String.format(Locale.US, "%.5f, %.5f", it.lat, it.lon) +
@@ -617,6 +665,7 @@ private fun SimulationCard(
                     )
                 }
             }
+            onSkip?.let { TextButton(onClick = it) { Text("Skip") } }
             if (status == SimStatus.Paused) {
                 OutlinedButton(onClick = onResume) { Text("Resume") }
             } else {
