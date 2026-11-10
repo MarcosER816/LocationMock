@@ -133,7 +133,8 @@ object TimelinePlanner {
             val vEnd = boundarySpeed(t, i + 1)
             val seed = seedFor(t, seg)
             val p = try {
-                planOne(i, seg, clock, startEpochS, v0, vEnd, seed, sources)
+                // The first plan of a route step takes exactly the provider's time; shuffling samples around it.
+                planOne(i, seg, clock, startEpochS, v0, vEnd, seed, sources, firstPlan = seg.seedOffset == 0L && t.seedBase == 1L)
             } catch (e: Exception) {
                 PlannedSegment(i, seg, null, clock, 0.0, 0.0, v0, vEnd, emptyList(), error = e.message ?: e.javaClass.simpleName)
             }
@@ -152,6 +153,7 @@ object TimelinePlanner {
         vEnd: Double,
         seed: Long,
         src: TimelineSources,
+        firstPlan: Boolean = false,
     ): PlannedSegment = when (seg) {
         is Segment.Pause -> {
             val d = seg.duration.distribution().sample(Random(seed)).coerceAtLeast(1.0)
@@ -174,7 +176,7 @@ object TimelinePlanner {
             // Walking: real stops at street crossings (always: it's how walking in a city works).
             val stops = if (seg.profile == RoutingProfile.Walk) com.mockroute.core.plan.AutoSettings.crossingStops(g.lengthM, depart, src.zone, Random(seed xor 0x5eed)) else emptyList()
             val plan = SpeedProfileGenerator.generate(
-                SpeedProfileGenerator.Request(g, st, seg.profile, seed, v0 = v0, vEnd = vEnd, localMedian = traffic?.let { a -> { s: Double -> a.medianSpeedAt(s) } }, stops = stops),
+                SpeedProfileGenerator.Request(g, st, seg.profile, seed, v0 = v0, vEnd = vEnd, lockTime = firstPlan && auto != null, localMedian = traffic?.let { a -> { s: Double -> a.medianSpeedAt(s) } }, stops = stops),
             )
             PlannedSegment(i, seg, PlanTrajectory(g, plan), startOffset, plan.totalTimeS, g.lengthM, v0, vEnd, g.points, plan.warning, settingsSource = auto?.source ?: "custom")
         }

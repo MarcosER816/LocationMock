@@ -120,7 +120,15 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
         ),
     )
     // Map style (Settings): dark by default; falls back along the chain if a style can't be loaded.
-    val styleChain = remember(settings?.mapStyle) { TileStyle.chainFor(settings?.mapStyle ?: "dark") }
+    // Dark = MockRoute's own style bundled in the APK (assets/map_dark.json, built by tools/make_map_style.py):
+    // blue water, dark-green parks, buildings lighter than the streets and in 3-D. Online styles are the fallbacks.
+    val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
+    val bundledDark = remember { runCatching { appContext.assets.open("map_dark.json").bufferedReader().use { it.readText() } }.getOrNull() }
+    val styleChain: List<BaseStyle> = remember(settings?.mapStyle, bundledDark) {
+        val mapStyle = settings?.mapStyle ?: "dark"
+        (if (mapStyle != "light" && bundledDark != null) listOf<BaseStyle>(BaseStyle.Json(bundledDark)) else emptyList()) +
+            TileStyle.chainFor(mapStyle).map { BaseStyle.Uri(it) }
+    }
     var styleIndex by rememberSaveable(settings?.mapStyle) { mutableIntStateOf(0) }
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val online by vm.online.collectAsStateWithLifecycle()
@@ -218,7 +226,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     onDrag = vm.zone::drag,
                     onTap = { id -> vm.zone.onHandleTap(id)?.let(vm::showMessage) },
                 ),
-            baseStyle = BaseStyle.Uri(styleChain[styleIndex.coerceIn(0, styleChain.lastIndex)]),
+            baseStyle = styleChain[styleIndex.coerceIn(0, styleChain.lastIndex)],
             cameraState = cameraState,
             // MaplibreMap (0.14) remembers its callbacks from the FIRST composition and never updates them, so
             // these lambdas must not capture composition-time values (e.g. the current mode): they forward to
@@ -439,6 +447,19 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             SmallFloatingActionButton(onClick = onOpenSettings) {
                 Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings")
             }
+            // Tilt the map to see the buildings in 3-D (and back to flat).
+            SmallFloatingActionButton(
+                onClick = {
+                    scope.launch {
+                        val tilted = cameraState.position.tilt > 5.0
+                        cameraState.animateTo(
+                            cameraState.position.copy(tilt = if (tilted) 0.0 else 55.0, zoom = if (tilted) cameraState.position.zoom else maxOf(cameraState.position.zoom, 16.0)),
+                            duration = com.mockroute.app.ui.theme.AppMotion.DURATION_MS.milliseconds,
+                        )
+                    }
+                },
+                modifier = Modifier.semantics { contentDescription = "3D view" },
+            ) { androidx.compose.material3.Text("3D", style = MaterialTheme.typography.labelLarge) }
             SmallFloatingActionButton(
                 onClick = onOpenTimeline,
                 modifier = Modifier.semantics { contentDescription = "Trip" },

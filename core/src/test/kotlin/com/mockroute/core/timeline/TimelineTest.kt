@@ -217,6 +217,23 @@ class TimelineTest {
     }
 
     @Test
+    fun firstPlanOfARouteTakesExactlyTheProvidersTime() = runBlocking {
+        val withEta = object : TimelineSources {
+            override suspend fun route(seg: Segment.Route) =
+                com.mockroute.core.route.StraightLineProvider.build(seg.inputs, seg.profile).copy(durationS = 431.0)
+            override suspend fun roadGraph(seg: Segment.StreetZone, frame: LocalFrame, polygon: Polygon2): RoadGraph? = null
+        }
+        val t = Timeline(anchor = ll(0.0, 0.0)).add(SegmentKind.Route, "r").moveFreePoint(1, ll(500.0, 0.0))
+        val first = TimelinePlanner.plan(t, 1_794_000_000L, withEta)
+        assertEquals(431.0, first.segments[0].durationS, 1.0) // exactly the provider's time
+        assertTrue(first.segments[0].settingsSource.contains("provider"))
+        // After a shuffle the time is sampled around it (so it differs).
+        val shuffled = t.replaceKeepingFixed(0, t.segments[0].reroll())
+        val second = TimelinePlanner.plan(shuffled, 1_794_000_000L, withEta)
+        assertTrue(abs(second.segments[0].durationS - 431.0) > 1.0, "shuffled ${second.segments[0].durationS}")
+    }
+
+    @Test
     fun gpxHasTimestampedPoints() = runBlocking {
         val plan = TimelinePlanner.plan(fullTimeline(1), 1_794_000_000L, sources)
         val traj = assertNotNull(plan.trajectory())

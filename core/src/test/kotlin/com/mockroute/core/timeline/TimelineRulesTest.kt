@@ -95,19 +95,23 @@ class TimelineRulesTest {
         assertEquals(AutoSettings.Period.Day, AutoSettings.period(satMorning, zone))
 
         val d = 8000.0
+        // With a router ETA the provider's time is the default as given: time mean = ETA, speed mean = d / ETA.
         val peak = AutoSettings.forRoute(RoutingProfile.Car, d, providerEtaS = 900.0, departEpochS = wedPeak, zone = zone)
         val night = AutoSettings.forRoute(RoutingProfile.Car, d, providerEtaS = 900.0, departEpochS = wedNight, zone = zone)
-        assertTrue(peak.settings.time.distribution().mean > night.settings.time.distribution().mean * 1.3, "rush hour slower")
-        assertEquals(900.0 * 1.35, peak.settings.time.distribution().mean, 900.0 * 1.35 * 0.03)
-        assertTrue(peak.source.contains("route ETA") && peak.source.contains("08:15"), peak.source)
+        assertEquals(900.0, peak.settings.time.distribution().mean, 900.0 * 0.03)
+        assertEquals(900.0, night.settings.time.distribution().mean, 900.0 * 0.03)
+        assertEquals(d / 900.0, peak.settings.speed.distribution().mean, d / 900.0 * 0.03)
+        assertTrue(peak.source.contains("provider"), peak.source)
         // No router ETA → standard speed for the hour.
         val std = AutoSettings.forRoute(RoutingProfile.Car, d, null, wedNight, zone)
         assertEquals(d / (40 / 3.6), std.settings.time.distribution().mean, 0.03 * d / (40 / 3.6))
-        // Walking: crossing waits make it longer at rush hour than at night (same ETA).
-        val walkPeak = AutoSettings.forRoute(RoutingProfile.Walk, 1500.0, 1125.0, wedPeak, zone)
-        val walkNight = AutoSettings.forRoute(RoutingProfile.Walk, 1500.0, 1125.0, wedNight, zone)
+        // Walking without an ETA: crossing waits make it longer at rush hour than at night.
+        val walkPeak = AutoSettings.forRoute(RoutingProfile.Walk, 1500.0, null, wedPeak, zone)
+        val walkNight = AutoSettings.forRoute(RoutingProfile.Walk, 1500.0, null, wedNight, zone)
         assertTrue(walkPeak.expectedWaitS > walkNight.expectedWaitS && walkPeak.expectedWaitS > 0)
         assertTrue(walkPeak.source.endsWith("+ crossings"))
+        // Walking WITH an ETA: the provider's time, unchanged.
+        assertEquals(1125.0, AutoSettings.forRoute(RoutingProfile.Walk, 1500.0, 1125.0, wedPeak, zone).settings.time.distribution().mean, 1125.0 * 0.03)
         for (r in listOf(peak, night, std, walkPeak, walkNight)) {
             assertTrue(r.settings.feasibility(if (r === walkPeak || r === walkNight) 1500.0 else d).let { it.feasible || it.issues == listOf(com.mockroute.core.plan.Feasibility.Issue.TooShort) }, "${r.source}: ${r.settings}")
             assertTrue(r.settings.vMax <= 100 / 3.6 + 1e-9 && r.settings.tMax <= 6 * 3600.0)

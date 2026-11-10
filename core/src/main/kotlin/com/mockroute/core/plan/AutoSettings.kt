@@ -18,8 +18,8 @@ import kotlin.random.Random
  * Priority:
  * 1. **Car/Bus with a TomTom analysis** for the step's departure (historic speeds, time-dependent ETA, speed limits
  *    inside TomTom's model) → its fitted settings (Stage 5).
- * 2. **The router's ETA** (OpenRouteService/GraphHopper durations already use road classes and speed limits) ×
- *    a congestion factor for the hour (car/bus: night 1.0, day 1.15, peak 1.35; bus ×1.15 more for stops).
+ * 2. **The router's ETA** as given (OpenRouteService/GraphHopper durations already use road classes and speed
+ *    limits): time mean = ETA, speed mean = distance / ETA.
  * 3. **Standard urban speeds for the hour** (walk 4.8 km/h; car night 40 / day 30 / peak 20; bus 0.8 × car).
  *
  * Walking adds **street-crossing waits**: a crossing about every 150 m; at each you stop with a probability and for a
@@ -111,12 +111,15 @@ object AutoSettings {
             return Result(traffic.settings.copy(autoFromTraffic = true), "TomTom traffic at $clock", 0.0)
         }
         val wait = if (profile == RoutingProfile.Walk) expectedCrossingWaitS(distanceM, p) else 0.0
+        // The provider's own time is the default (user rule 2026-11-10): time mean = the router's ETA, speed mean =
+        // distance / ETA, with no extra factors. Only without an ETA do we fall back to a standard speed for the hour
+        // (plus the expected crossing waits when walking).
+        val fromProvider = providerEtaS != null && providerEtaS > 0
         val (moving, source) = when {
-            providerEtaS != null && providerEtaS > 0 ->
-                providerEtaS * congestionFactor(profile, p) to "route ETA × ${p.label} at $clock"
+            fromProvider -> providerEtaS!! to "route provider's time"
             else -> distanceM / (standardKmh(profile, p) / 3.6) to "standard ${p.label} speed at $clock"
         }
-        val sourceLabel = if (wait > 0) "$source + crossings" else source
+        val sourceLabel = if (wait > 0 && !fromProvider) "$source + crossings" else source
         val vMean = (distanceM / moving.coerceAtLeast(1.0)).coerceIn(0.5, 100 / 3.6)
         val walk = profile == RoutingProfile.Walk
         val spread = if (walk) 0.30 else 0.60
@@ -125,7 +128,7 @@ object AutoSettings {
         val cvV = if (walk) 0.12 else 0.20
         val speedG = BoundedGamma.withMeanVariance(vLo, vHi, vMean, (cvV * vMean).let { it * it })
         val preset = AccelerationPreset.defaultFor(profile)
-        val tMean = moving + wait
+        val tMean = if (fromProvider) moving else moving + wait
         val sd = 0.12 * tMean
         val tPhys = Feasibility.tMinPhys(distanceM, vHi, preset.aMps2) * 1.02
         val tLo = max(tPhys, tMean - 3 * sd)

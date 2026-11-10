@@ -66,7 +66,11 @@ class PlanController(
     private val _status = MutableStateFlow<PlanStatus>(PlanStatus.NoRoute)
     val status: StateFlow<PlanStatus> = _status.asStateFlow()
 
+    /** The route that has been shuffled at least once; until then its plan takes exactly the default (provider) time. */
+    @Volatile private var shuffledFor: RouteGeometry? = null
+
     fun reroll() {
+        shuffledFor = route.value.first
         _seed.value = Random.nextLong(1, Long.MAX_VALUE)
     }
 
@@ -79,7 +83,8 @@ class PlanController(
             combine(route, settings, _seed, _lockTime, traffic) { r, s, seed, lock, tr ->
                 // Use predicted chunk speeds as the copula's local median when the analysis is for this route.
                 val median = (tr as? TrafficStatus.Ready)?.takeIf { it.geometry == r.first }?.analysis
-                Inputs(r.first, r.second, s, seed, lock, median)
+                // First plan of a route = exactly the default time (the provider's); Shuffle then samples around it.
+                Inputs(r.first, r.second, s, seed, lock || shuffledFor != r.first, median)
             }
                 .distinctUntilChanged()
                 .debounce(250)
