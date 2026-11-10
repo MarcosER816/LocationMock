@@ -145,6 +145,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     val planner = PlanController(viewModelScope, routeForPlan, _plan, traffic.status)
 
+    /** Diagnostics: route cache key, cached samples on disk, last cache problem. */
+    fun trafficCacheInfo(status: TrafficStatus): String {
+        val key = (status as? TrafficStatus.Ready)?.analysis?.routeKey?.take(6) ?: "—"
+        val problem = trafficCache.lastProblem?.let { " · cache problem: $it" } ?: ""
+        return "cache: route $key · ${trafficCache.entryCount()} samples stored$problem"
+    }
+
     fun setTomTomKey(key: String) = viewModelScope.launch { repo.setTomTomApiKey(key) }
     fun setGoogleRoutesKey(key: String) = viewModelScope.launch { repo.setGoogleRoutesApiKey(key) }
 

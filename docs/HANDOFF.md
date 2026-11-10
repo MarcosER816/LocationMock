@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — 0.5.1 verified on device (corridor match). Stages 1–4 verified on device._
+_Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — 0.5.2 (corridor first, cache fix) pending phone re-check. Stages 1–4 verified on device._
 
 ## Done
 ### Stage 5 — traffic-aware Car/Bus (0.5.0)
@@ -157,6 +157,20 @@ _Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — 0.5.1 verified
 ### Stage 0
 Gradle multi-module skeleton, version catalog, wrapper, stable debug keystore, CI artifact `app-debug`,
 optional API-key secrets → BuildConfig.
+
+## 0.5.2 — corridor first + traffic cache fix (phone report 2026-11-10)
+- **Corridor first** (user request): `TomTomTrafficProvider.ATTEMPT_ORDER = Corridor → Exact → Direct`. This
+  saves the wasted exact attempt on ORS-traced routes.
+- **Cache never hit on the phone** ("6 requests, 0 from cache" every time, even repeating the same departure). The
+  core logic was verified in a JVM test with a file-backed cache (2nd run: 0 requests, all hits), so the fault is
+  device-side. Prime suspect: **the TTL used `File.lastModified()`**. If that returns 0 (or isn't preserved),
+  every entry looks expired and is deleted on read. **Fix:** the save time is stored *inside* each file
+  (`CachedSample(savedAtMs, sample)` and `CachedRoute(savedAtMs, result)`, in `:core` because only `:core`
+  applies the serialization plugin). Old-format files fail to decode and are deleted once. Eviction now uses
+  file names, not timestamps. The ORS route cache had the same pattern and is fixed too.
+- **Diagnostics line** in the traffic row: "cache: route ab12cd · N samples stored · cache problem: …". If misses
+  continue: the same route key with N growing → check bins/time; the route key changing between fetches → the
+  geometry changes (e.g. A re-captured from a new GPS fix).
 
 ## 0.5.1 — TomTom "CANNOT_RESTORE_BASEROUTE" fix (phone report 2026-11-10)
 - **Symptom (Car mode):** "TomTom couldn't follow this route: Engine error while executing route request:

@@ -3,6 +3,7 @@ package com.mockroute.app.net
 import android.content.Context
 import android.util.Log
 import com.mockroute.core.geo.LatLon
+import com.mockroute.core.route.CachedRoute
 import com.mockroute.core.route.RouteResult
 import com.mockroute.core.route.RoutingProfile
 import kotlinx.coroutines.Dispatchers
@@ -29,25 +30,27 @@ class RouteCache(context: Context) {
             .joinToString("") { "%02x".format(it) }
     }
 
+    /** Save time stored inside the file (File.lastModified() proved unreliable on the phone). */
     suspend fun get(key: String): RouteResult? = withContext(Dispatchers.IO) {
         val f = File(dir, "$key.json")
         if (!f.exists()) return@withContext null
-        if (System.currentTimeMillis() - f.lastModified() > TTL_MS) {
+        val e = runCatching { json.decodeFromString(CachedRoute.serializer(), f.readText()) }
+            .onFailure { f.delete() }
+            .getOrNull() ?: return@withContext null
+        if (System.currentTimeMillis() - e.savedAtMs > TTL_MS) {
             f.delete()
             return@withContext null
         }
-        runCatching { json.decodeFromString(RouteResult.serializer(), f.readText()) }
-            .onFailure { f.delete() }
-            .getOrNull()
+        e.result
     }
 
     suspend fun put(key: String, result: RouteResult) = withContext(Dispatchers.IO) {
         if (result.isFallback) return@withContext
         runCatching {
-            File(dir, "$key.json").writeText(json.encodeToString(RouteResult.serializer(), result))
+            File(dir, "$key.json").writeText(json.encodeToString(CachedRoute.serializer(), CachedRoute(System.currentTimeMillis(), result)))
             val files = dir.listFiles().orEmpty()
             if (files.size > MAX_ENTRIES) {
-                files.sortedBy { it.lastModified() }.take(files.size - MAX_ENTRIES).forEach { it.delete() }
+                files.sortedBy { it.name }.take(files.size - MAX_ENTRIES).forEach { it.delete() }
             }
         }.onFailure { Log.w("RouteCache", "write failed", it) }
     }

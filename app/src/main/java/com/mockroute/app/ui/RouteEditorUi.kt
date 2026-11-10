@@ -109,6 +109,7 @@ fun SegmentSheet(
     requestsToday: Int,
     onDeparture: (Long) -> Unit,
     onRefetch: () -> Unit,
+    trafficCacheInfo: String = "",
 ) {
     val result = state.result
     Card(
@@ -174,7 +175,7 @@ fun SegmentSheet(
 
             // Stage 5: traffic (Car/Bus).
             if (result != null && state.profile != RoutingProfile.Walk) {
-                TrafficRow(trafficStatus, departure, requestsToday, onDeparture, onRefetch)
+                TrafficRow(trafficStatus, departure, requestsToday, onDeparture, onRefetch, trafficCacheInfo)
             }
 
             // Stage 3: speed/time distributions + feasibility.

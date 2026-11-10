@@ -245,6 +245,18 @@ class TrafficTest {
     }
 
     @Test
+    fun cacheEnvelopeRoundTrip() {
+        val body = requireNotNull(javaClass.getResource("/fixtures/tomtom_calculate_route.json")).readText()
+        val ours = RouteGeometry.of(LatLon(52.5, 13.4), LatLon(52.5, 13.44431))
+        val sample = TomTomCodec.parse(body, ours, 1_000L, PathMatch.Corridor)
+        val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+        val e = CachedSample(123L, sample)
+        val back = json.decodeFromString(CachedSample.serializer(), json.encodeToString(CachedSample.serializer(), e))
+        assertEquals(e, back)
+        assertEquals(PathMatch.Corridor, back.sample.match)
+    }
+
+    @Test
     fun requestUrlAndBody() {
         val g = route(3000.0)
         val url = TomTomCodec.url(g, t0 + 7200, zone, TrafficMode.Car, "KEY")

@@ -54,6 +54,7 @@ fun TrafficRow(
     requestsToday: Int,
     onDeparture: (Long) -> Unit,
     onRefetch: () -> Unit,
+    cacheInfo: String = "",
 ) {
     var picking by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -96,8 +97,11 @@ fun TrafficRow(
             }
             is TrafficStatus.NoKey -> Text(status.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             is TrafficStatus.Error -> Text(status.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-            TrafficStatus.Loading -> Text("Fetching typical traffic (≤ ${TrafficPlanner.MAX_REQUESTS_PER_PLAN} requests)…", style = MaterialTheme.typography.bodySmall)
             TrafficStatus.Off -> Unit
+            TrafficStatus.Loading -> Text("Fetching typical traffic (≤ ${TrafficPlanner.MAX_REQUESTS_PER_PLAN} requests)…", style = MaterialTheme.typography.bodySmall)
+        }
+        if (cacheInfo.isNotEmpty() && status !is TrafficStatus.Off) {
+            Text(cacheInfo, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
     }
     if (picking) DeparturePicker(departureEpochS, onDismiss = { picking = false }) {

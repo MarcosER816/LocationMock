@@ -62,6 +62,10 @@ data class RouteResult(
     }
 }
 
+/** Disk-cache envelope for routing results (save time stored in the file). */
+@Serializable
+data class CachedRoute(val savedAtMs: Long, val result: RouteResult)
+
 interface RoutingProvider {
     /** Stable id used for cache keys and display, e.g. "ors". */
     val id: String

@@ -58,6 +58,10 @@ data class SpeedProfileSample(
     }
 }
 
+/** Disk-cache envelope: the save time lives in the file (File.lastModified() is unreliable on some phones). */
+@Serializable
+data class CachedSample(val savedAtMs: Long, val sample: SpeedProfileSample)
+
 /** How the provider's route relates to our traced geometry. */
 @Serializable
 enum class PathMatch(val label: String) {

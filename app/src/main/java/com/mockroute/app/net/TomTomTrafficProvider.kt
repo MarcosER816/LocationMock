@@ -13,8 +13,9 @@ import java.time.ZoneId
 /**
  * TomTom calculateRoute with departAt (historic speed profiles) along our traced path (see [TomTomCodec]).
  *
- * Path matching falls back Exact (supporting points, track reconstruction) → Corridor (waypoint circles) →
- * Direct (A→B) when TomTom can't rebuild the path. The first method that works is remembered for the rest of
+ * Path matching tries Corridor (waypoint circles along our path) FIRST — on the phone the exact rebuild from
+ * OpenRouteService geometry failed (CANNOT_RESTORE_BASEROUTE) while the corridor worked, so starting with it saves
+ * a wasted request — then Exact (supporting points, track reconstruction), then Direct (A→B). The first method that works is remembered for the rest of
  * this analysis, so the other departure bins don't repeat failed attempts.
  */
 class TomTomTrafficProvider(
@@ -32,21 +33,25 @@ class TomTomTrafficProvider(
         if (apiKey.isBlank()) throw TrafficException.MissingKey(TomTomCodec.PROVIDER)
         method?.let { return request(route, departureEpochS, mode, it) }
         var last: TrafficException? = null
-        for (m in PathMatch.entries) {
+        for (m in ATTEMPT_ORDER) {
             try {
                 return request(route, departureEpochS, mode, m).also { method = m }
             } catch (e: TrafficException.RestoreFailed) {
                 last = e
             } catch (e: TrafficException.NoRoute) {
                 last = e
-                if (m == PathMatch.Direct) throw e
+                if (m == ATTEMPT_ORDER.last()) throw e
             } catch (e: TrafficException.Http) {
-                // e.g. 400 BAD_INPUT if TomTom rejects a parameter of this method: try the next, simpler one.
-                if (e.code != 400 || m == PathMatch.Direct) throw e
+                // e.g. 400 BAD_INPUT if TomTom rejects a parameter of this method: try the next one.
+                if (e.code != 400 || m == ATTEMPT_ORDER.last()) throw e
                 last = e
             }
         }
         throw last ?: TrafficException.NoRoute(TomTomCodec.PROVIDER, null)
+    }
+
+    companion object {
+        val ATTEMPT_ORDER = listOf(PathMatch.Corridor, PathMatch.Exact, PathMatch.Direct)
     }
 
     private suspend fun request(route: RouteGeometry, departureEpochS: Long, mode: TrafficMode, m: PathMatch): SpeedProfileSample {

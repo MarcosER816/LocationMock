@@ -445,6 +445,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     requestsToday = vm.traffic.requestsToday(settings),
                     onDeparture = vm.traffic::setDeparture,
                     onRefetch = vm.traffic::refetchNow,
+                    trafficCacheInfo = vm.trafficCacheInfo(trafficStatus),
                 )
             }
             selected?.takeIf { !editing }?.let { p ->
