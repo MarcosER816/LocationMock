@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — 0.5.0 built, CI; awaiting phone test with a TomTom key. Stages 1–4 verified on device._
+_Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — 0.5.1 (path-matching fallback) pending phone re-test. Stages 1–4 verified on device._
 
 ## Done
 ### Stage 5 — traffic-aware Car/Bus (0.5.0)
@@ -157,6 +157,26 @@ _Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — 0.5.0 built, C
 ### Stage 0
 Gradle multi-module skeleton, version catalog, wrapper, stable debug keystore, CI artifact `app-debug`,
 optional API-key secrets → BuildConfig.
+
+## 0.5.1 — TomTom "CANNOT_RESTORE_BASEROUTE" fix (phone report 2026-11-10)
+- **Symptom (Car mode):** "TomTom couldn't follow this route: Engine error while executing route request:
+  CANOT_RESTORE_BASEROUTE: No valid route found." TomTom couldn't rebuild our traced path from the supporting
+  points. The likely reason is that our geometry comes from OpenRouteService (OSM), so points sit slightly off
+  TomTom's road network, or a stretch isn't drivable in TomTom's data.
+- **Fix:** a path-matching fallback in `TomTomTrafficProvider` (enum `PathMatch`). The first method that works is
+  remembered for the remaining bins of the analysis:
+  1. **Exact:** supportingPoints with **`reconstructionMode=track`** (tolerant, meant for GPS-like tracks).
+  2. **Corridor:** GET with `circle(lat,lon,150)` waypoints every 1.5 km along our path (≤ 148; circles add no
+     legs).
+  3. **Direct:** plain A→B.
+  It falls back on `RestoreFailed` (CANNOT_RESTORE_BASEROUTE / MAP_MATCHING_FAILURE, matched by code *or* by
+  message, since TomTom spells it "CANOT"), on `NoRoute`, or on a 400 (in case a parameter is rejected).
+  In all cases speeds are mapped onto our geometry by distance fraction.
+- **Quota:** a failed attempt also costs a request, so the worst case for the first bin is 3, and later bins use
+  the method that worked. The 12-per-plan budget can then be exceeded by ≤ 2. Shown in the sheet: "… · exact path
+  / approximate path (corridor) / A→B only", plus a note when it isn't exact.
+- **Still unverified:** whether `reconstructionMode=track` alone fixes it (no key in the sandbox). Report which
+  label the sheet shows.
 
 ## Stage 5: traffic endpoints, params, quota, inaccuracies
 **TomTom Routing API v1** (docs.tomtom.com/routing-api, checked 2026-11-10):

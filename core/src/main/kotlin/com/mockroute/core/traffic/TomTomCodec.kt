@@ -30,7 +30,19 @@ object TomTomCodec {
 
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
-    fun url(route: RouteGeometry, departureEpochS: Long, zone: ZoneId, mode: TrafficMode, key: String): String {
+    /** Waypoint circles for [PathMatch.Corridor]: every ~1.5 km, ≤ 148 (TomTom allows 150 waypoints). */
+    const val CORRIDOR_SPACING_M = 1500.0
+    const val CORRIDOR_RADIUS_M = 150
+
+    /**
+     * Request URL for [match]:
+     * - Exact: A:B + POST body of supportingPoints, `reconstructionMode=track` (tolerant: our geometry comes from
+     *   OpenRouteService/OSM, so points can sit slightly off TomTom's road network; strict reconstruction then
+     *   fails with CANNOT_RESTORE_BASEROUTE).
+     * - Corridor: A:circle(…):…:B, GET, circles don't add legs.
+     * - Direct: A:B, GET.
+     */
+    fun url(route: RouteGeometry, departureEpochS: Long, zone: ZoneId, mode: TrafficMode, key: String, match: PathMatch = PathMatch.Exact): String {
         val a = route.start!!
         val b = route.end!!
         val depart = DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(Instant.ofEpochSecond(departureEpochS).atZone(zone))
@@ -38,9 +50,22 @@ object TomTomCodec {
         val travelMode = when (mode) {
             TrafficMode.Car, TrafficMode.Bus -> "car"
         }
-        return "$BASE_URL/${ll(a)}:${ll(b)}/json?key=${enc(key)}&departAt=${enc(depart)}&traffic=true" +
+        val locations = when (match) {
+            PathMatch.Corridor -> buildString {
+                append(ll(a))
+                val n = (route.lengthM / CORRIDOR_SPACING_M).toInt().coerceIn(0, 148)
+                for (i in 1..n) {
+                    val p = route.pointAtDistance(route.lengthM * i / (n + 1)).position
+                    append(":circle(").append(ll(p)).append(',').append(CORRIDOR_RADIUS_M).append(')')
+                }
+                append(':').append(ll(b))
+            }
+            else -> "${ll(a)}:${ll(b)}"
+        }
+        val reconstruction = if (match == PathMatch.Exact) "&reconstructionMode=track" else ""
+        return "$BASE_URL/$locations/json?key=${enc(key)}&departAt=${enc(depart)}&traffic=true" +
             "&sectionType=traffic&computeTravelTimeFor=all&travelMode=$travelMode&instructionsType=coded" +
-            "&routeType=fastest"
+            "&routeType=fastest$reconstruction"
     }
 
     fun body(route: RouteGeometry): String {
@@ -108,7 +133,7 @@ object TomTomCodec {
      * manoeuvre). Without guidance it is rebuilt from the traffic sections (their effective speeds) with the
      * remaining time spread evenly over the rest.
      */
-    fun parse(body: String, ours: RouteGeometry, departureEpochS: Long): SpeedProfileSample {
+    fun parse(body: String, ours: RouteGeometry, departureEpochS: Long, match: PathMatch = PathMatch.Exact): SpeedProfileSample {
         val resp = try {
             json.decodeFromString(Response.serializer(), body)
         } catch (e: Exception) {
@@ -152,6 +177,7 @@ object TomTomCodec {
             timesS = times,
             sections = sections,
             provider = PROVIDER,
+            match = match,
         )
     }
 
@@ -222,7 +248,11 @@ object TomTomCodec {
             httpCode == 403 && body?.contains("over", true) == true -> TrafficException.QuotaExceeded(PROVIDER)
             httpCode == 403 -> TrafficException.Unauthorized(PROVIDER)
             httpCode == 429 -> TrafficException.QuotaExceeded(PROVIDER)
-            code in setOf("NO_ROUTE_FOUND", "MAP_MATCHING_FAILURE", "CANNOT_RESTORE_BASEROUTE") -> TrafficException.NoRoute(PROVIDER, msg)
+            // TomTom's message even spells it "CANOT_RESTORE_BASEROUTE"; match the code and the text.
+            code in setOf("MAP_MATCHING_FAILURE", "CANNOT_RESTORE_BASEROUTE") ||
+                msg?.contains("RESTORE_BASEROUTE", true) == true || msg?.contains("MAP_MATCHING", true) == true ->
+                TrafficException.RestoreFailed(PROVIDER, msg)
+            code == "NO_ROUTE_FOUND" -> TrafficException.NoRoute(PROVIDER, msg)
             else -> TrafficException.Http(PROVIDER, httpCode, msg ?: code)
         }
     }

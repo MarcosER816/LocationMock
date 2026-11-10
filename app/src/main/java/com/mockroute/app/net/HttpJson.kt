@@ -11,6 +11,26 @@ object HttpJson {
     data class Response(val code: Int, val body: String?)
 
     @Throws(IOException::class)
+    suspend fun get(url: String, headers: Map<String, String> = emptyMap()): Response =
+        withContext(Dispatchers.IO) {
+            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 15_000
+                readTimeout = 30_000
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("User-Agent", "MockRoute-Android")
+                headers.forEach { (k, v) -> setRequestProperty(k, v) }
+            }
+            try {
+                val code = conn.responseCode
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                Response(code, stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() })
+            } finally {
+                conn.disconnect()
+            }
+        }
+
+    @Throws(IOException::class)
     suspend fun post(url: String, body: String, headers: Map<String, String> = emptyMap()): Response =
         withContext(Dispatchers.IO) {
             val conn = (URL(url).openConnection() as HttpURLConnection).apply {

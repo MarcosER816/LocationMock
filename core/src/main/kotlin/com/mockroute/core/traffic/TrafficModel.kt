@@ -35,6 +35,8 @@ data class SpeedProfileSample(
     val timesS: List<Double>,
     val sections: List<TrafficSection> = emptyList(),
     val provider: String,
+    /** How closely the provider followed our path (see [PathMatch]). */
+    val match: PathMatch = PathMatch.Exact,
 ) {
     init {
         require(offsetsM.size == timesS.size && offsetsM.size >= 2) { "profile needs ≥ 2 points" }
@@ -56,6 +58,17 @@ data class SpeedProfileSample(
     }
 }
 
+/** How the provider's route relates to our traced geometry. */
+@Serializable
+enum class PathMatch(val label: String) {
+    /** Rebuilt from our points (supporting points). */
+    Exact("exact path"),
+    /** Routed through waypoint circles along our path: nearly the same roads. */
+    Corridor("approximate path (corridor)"),
+    /** Plain A→B: the provider's own route; mapped onto ours by distance fraction. */
+    Direct("A→B only (provider's own route)"),
+}
+
 interface TrafficProvider {
     val id: String
     val displayName: String
@@ -70,7 +83,10 @@ sealed class TrafficException(val userMessage: String, cause: Throwable? = null)
     class Unauthorized(p: String) : TrafficException("$p rejected the API key. Check it in Settings → Traffic.")
     class QuotaExceeded(p: String) : TrafficException("$p daily quota used up (or rate limited). Try later; manual speed & time still work.")
     class NoRoute(p: String, detail: String?) : TrafficException("$p couldn't follow this route${detail?.let { ": $it" } ?: ""}.")
+
+    /** TomTom couldn't rebuild OUR path from supporting points (CANNOT_RESTORE_BASEROUTE / MAP_MATCHING_FAILURE). */
+    class RestoreFailed(p: String, detail: String?) : TrafficException("$p couldn't follow the traced path${detail?.let { ": $it" } ?: ""}.")
     class Network(p: String, cause: Throwable?) : TrafficException("Can't reach $p (offline?).", cause)
-    class Http(p: String, code: Int, detail: String?) : TrafficException("$p error $code${detail?.let { ": $it" } ?: ""}")
+    class Http(p: String, val code: Int, detail: String?) : TrafficException("$p error $code${detail?.let { ": $it" } ?: ""}")
     class Parse(p: String, cause: Throwable?) : TrafficException("Unexpected response from $p.", cause)
 }

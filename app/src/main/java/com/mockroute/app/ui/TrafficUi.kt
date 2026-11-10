@@ -80,8 +80,15 @@ fun TrafficRow(
                         if (a.timeHeuristic) " · time spread heuristic (±12 %)" else "",
                     style = MaterialTheme.typography.bodySmall,
                 )
+                if (a.match != com.mockroute.core.traffic.PathMatch.Exact) {
+                    Text(
+                        "TomTom couldn't follow the exact traced path; using ${a.match.label}. Speeds are mapped onto your route by distance.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
                 Text(
-                    "${a.requestsMade} request(s), ${a.cacheHits} from cache" +
+                    "${a.requestsMade} request(s), ${a.cacheHits} from cache · ${a.match.label}" +
                         if (a.worst.isNotEmpty()) " · ${a.worst.size} congestion point(s) marked" else " · no notable congestion",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

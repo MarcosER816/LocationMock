@@ -236,7 +236,12 @@ class TrafficTest {
         // Errors.
         assertIs<TrafficException.Unauthorized>(TomTomCodec.error(401, """{"detailedError":{"code":"Unauthorized","message":"You are missing valid authentication credentials"}}"""))
         assertIs<TrafficException.QuotaExceeded>(TomTomCodec.error(429, null))
-        assertIs<TrafficException.NoRoute>(TomTomCodec.error(400, """{"detailedError":{"code":"MAP_MATCHING_FAILURE","message":"x"}}"""))
+        assertIs<TrafficException.RestoreFailed>(TomTomCodec.error(400, """{"detailedError":{"code":"MAP_MATCHING_FAILURE","message":"x"}}"""))
+        // The exact error seen on the phone (TomTom spells it "CANOT").
+        assertIs<TrafficException.RestoreFailed>(
+            TomTomCodec.error(400, """{"detailedError":{"code":"BAD_INPUT","message":"Engine error while executing route request: CANOT_RESTORE_BASEROUTE: No valid route found."}}"""),
+        )
+        assertIs<TrafficException.NoRoute>(TomTomCodec.error(400, """{"detailedError":{"code":"NO_ROUTE_FOUND","message":"x"}}"""))
     }
 
     @Test
@@ -246,6 +251,12 @@ class TrafficTest {
         assertTrue(url.startsWith("https://api.tomtom.com/routing/1/calculateRoute/40.420000,-3.700000:"), url)
         assertTrue(url.contains("departAt=2026-11-11T08%3A00%3A00%2B01%3A00"), url)
         assertTrue(url.contains("sectionType=traffic") && url.contains("computeTravelTimeFor=all") && url.contains("travelMode=car"))
+        assertTrue(url.contains("reconstructionMode=track"), url)
+        val corridor = TomTomCodec.url(route(9000.0), t0 + 7200, zone, TrafficMode.Car, "KEY", PathMatch.Corridor)
+        assertEquals(6, Regex("circle\\(").findAll(corridor).count(), corridor) // 9 km / 1.5 km
+        assertTrue(!corridor.contains("reconstructionMode"))
+        val direct = TomTomCodec.url(g, t0 + 7200, zone, TrafficMode.Car, "KEY", PathMatch.Direct)
+        assertTrue(!direct.contains("circle(") && !direct.contains("reconstructionMode"))
         val body = TomTomCodec.body(g)
         assertTrue(body.startsWith("""{"supportingPoints":[{"latitude":40.42,"longitude":-3.7}"""), body.take(80))
     }

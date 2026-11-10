@@ -41,6 +41,8 @@ class TrafficAnalysis(
     val cacheHits: Int,
     val iterations: Int,
     val routeKey: String,
+    /** How closely the provider followed our path (worst over the samples used). */
+    val match: PathMatch = PathMatch.Exact,
 ) {
     val chunkSpeedsMps: DoubleArray = DoubleArray(durationsS.size) { (boundariesM[it + 1] - boundariesM[it]) / durationsS[it] }
 
@@ -147,6 +149,7 @@ object TrafficPlanner {
             cacheHits = hits,
             iterations = main.iterations,
             routeKey = key,
+            match = samples.maxOf { it.match },
         )
     }
 
