@@ -51,6 +51,11 @@ red = fast. A label shows the total time. Tap the line to see the speed and ETA 
 generates a different plan; **Lock time** keeps the duration fixed. **Play plan** moves your mocked location along
 the route with that speed profile.
 
+## Street zone (Stage 7)
+Toolbar → **Zone** → **Streets** (Walk / Car / Bus): draw a neighbourhood. The app loads its streets from
+OpenStreetMap once (cached 30 days; **Refresh roads** to update), and you wander only along real streets inside
+it. A and B snap to the nearest road, and hotspots bias where you go.
+
 ## Indoor zone (Stage 6)
 Toolbar → **Indoor**:
 1. **Shape:** tap the corners of a room or building and tap **Close shape**.

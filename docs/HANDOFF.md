@@ -1,8 +1,27 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 6 (indoor zone + Gaussian-mixture 3D editor) — verified on device (0.6.1). Stages 1–6 verified on device._
+_Last updated: 2026-11-10 — Stage 7 (street zone) — 0.7.0 built, CI; awaiting phone test. Stages 1–6 verified on device._
 
 ## Done
+### Stage 7 — STREET zone (0.7.0)
+- **Toolbar "Zone"** (renamed from "Indoor") → a kind chip **Indoor | Streets**, plus a Walk / Car / Bus profile
+  for Streets. Switching kind or profile resets the zone's speed & time to that kind's defaults
+  (`SegmentPlanSettings.streetDefaults(profile)`).
+- It reuses the Stage 6 shape tool, hotspot mixture editor, 3D preview and Speed & time screen. For Streets:
+  - A/B can be inside or on the edge. Outside taps are pulled onto the edge, then everything snaps to the
+    **nearest road**, live while dragging.
+  - A **grey road overlay** shows the usable roads for the profile.
+  - The roads row shows status, cache age, segment count, "Overpass today: N / 100" and **Refresh roads**.
+  - A warning appears if the shape grew beyond the area whose roads were loaded.
+- **Data flow (0 requests on re-open):**
+  - Closing a street zone, or opening one, loads roads **from the cache** for `ZoneDefinition.roadsPolygon` (the
+    polygon last queried). Only the first load or a manual **Refresh roads** queries Overpass.
+  - The raw ways are clipped to the *current* shape when the graph is built, so edits inside the loaded area are
+    free.
+  - Graphs are memoised per (shape, profile, data).
+- **Planning** (`StreetPlanner`, see below) → a `ZonePlan` (accuracy 5 m, no wobble) → the same gradient /
+  chart / **Play zone** as Stage 6.
+
 ### Stage 6 — INDOOR zone + Gaussian-mixture editor (0.6.0)
 - **Toolbar → Indoor.** The zone sheet has four tools:
   - **Shape:** tap corners, drag them, Undo, **Close shape**, Reopen, Clear. Self-intersecting and < 4 m² shapes
@@ -236,6 +255,68 @@ optional API-key secrets → BuildConfig.
 
 - **Phone result 2026-11-10 (0.6.1):** shape closes; "everything seems fine". The fps figure of the 3D preview
   wasn't reported; ask for it if performance comes up.
+
+## Stage 7: Overpass query, cache policy, graph, perf
+**Query** (one per zone; the union of walk and car classes, so Walk/Car/Bus switches need no new request):
+```
+[out:json][timeout:90][maxsize:268435456];
+way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street|service|pedestrian|footway|path|steps|track)(_link)?$"](poly:"lat lon lat lon …");
+out geom;
+```
+- POSTed as `data=…` (form-encoded) with `User-Agent: MockRoute-Android/0.7 (personal, non-commercial mock-location
+  app)`. It contains no personal identifiers.
+- Endpoints: overpass-api.de, then overpass.private.coffee.
+- Backoff on 429/504: 2 s, then 6 s, then the next endpoint, then a clear message ("Overpass is busy… tap Refresh
+  roads").
+- Daily cap of **100** network queries (DataStore `overpass_request_day/count`); above that it refuses with a
+  message. Every attempt counts, retries included.
+
+**Cache:** `cacheDir/overpass/<sha256(query)[:32]>.json` + `.meta` (save time in the file). **30-day TTL**, never
+`lastModified()`. After 30 days the next open re-queries once.
+
+**Mode filters** (in `RoadGraph.usable/direction`):
+- **Walk:** primary…track, footway, path, pedestrian, steps, living_street, service (+ primary/secondary/tertiary
+  links). Excludes motorway/trunk, `foot=no`, and `access=private|no` unless `foot=yes|designated|permissive`.
+  `oneway` is ignored.
+- **Car/Bus:** motorway…service + links. Excludes `access`/`motor_vehicle=private|no` and `motorcar=no`; Bus
+  also excludes parking aisles and driveways. **oneway** handled: yes/true/1 → forward, -1/reverse → backward,
+  roundabout/circular and motorway imply forward. `maxspeed` is parsed (km/h, mph → km/h, other values → none).
+
+**Graph** (`RoadGraph.build`):
+- Usable ways are cut wherever a node is outside the polygon or a segment leaves it (`segmentInside`), and split
+  at nodes shared by ≥ 2 usable ways.
+- Directed edges carry `twin` links.
+- Only the **largest strongly connected component** (by length; iterative Kosaraju) is kept, so B is always
+  reachable and you can always get back.
+- `insertNode(p)` snaps A/B: it reuses an end node within 0.5 m, otherwise splits the edge and its twin.
+
+**StreetPlanner:**
+1. T ~ time gamma, ≥ tMinPhys(shortest A→B)·1.02 + 1 s. A reverse Dijkstra gives the distance to B for every
+   node.
+2. **Waypoints:** targets ∝ mixture density at the nodes (floor 1e-4·max), joined by Dijkstra. **Random walk:**
+   next edge ∝ p(head)^1.5, U-turn ×0.05, honouring one-way rules. Both stop when (time so far + leg + way to B,
+   at the speed mean) > budget·T.
+3. Then the shortest path to B, and the Stage 4 generator:
+   - Walk: dwells.
+   - Car/Bus: per-edge maxspeed caps, and **≤ 15 km/h within ±8 m of turns > 60°** (`Request.speedCap`).
+4. If the caps make the plan slower than T, it re-plans with budget 0.97 → 0.9 → … → 0 (straight to B). If even
+   that is too slow, T becomes the fastest achievable time. If it is too fast, it waits at B.
+
+**Measured (sandbox JVM):**
+- Fixture: walk graph 26 nodes / 76 directed edges, car 23 / 63.
+- Synthetic 30×30 grid (3 km × 3 km, 900 junctions, 3,480 edges): build ≈ 60–125 ms, plan ≈ 20–70 ms.
+- A real Overpass neighbourhood (≈ 1 km²) is typically a few thousand nodes: expect a few hundred ms on the
+  phone.
+- Time near a dominant Gaussian: **49 % vs 4.7 %** with a uniform mixture.
+- The fixture is **synthetic**: the sandbox couldn't reach any Overpass instance (connection reset / timeout / 504).
+  It mirrors the documented `out geom;` format (`type, id, bounds, nodes, geometry, tags`).
+
+**Limitations:**
+- No turn restrictions (`restriction` relations), no traffic lights / stop signs.
+- Bus = car roads (no bus-only ways or `psv`).
+- `access=destination` is treated as allowed.
+- Only the largest connected part is used, so isolated streets inside the polygon are ignored.
+- `maxspeed` codes like "ES:urban" fall back to no cap.
 
 ## Stage 6 API (zone, `:core` package `zone`)
 - `Vec2`, `LocalFrame(origin)` (equirectangular local metres, exact inverse).
@@ -526,8 +607,22 @@ list of `LatLon`.
 - The tall segment sheet covers part of the map on small screens.
 
 ## Next steps
-- Run the Stage 6 phone test script below.
-- Stage 7: street zone (Overpass road graph inside a polygon; cache, ≤ 100 queries/day).
+- Run the Stage 7 phone test script below.
+- Stage 8: timeline (chain segments; B(i) = A(i+1); first A = the real location; pass each plan's end speed on as
+  the next `v0`).
+
+## How to verify on phone (Stage 7 test script)
+1. Install 0.7.0. Toolbar → **Zone** → chip **Streets**, profile **Walk**.
+2. **Shape:** draw a neighbourhood polygon (~300–600 m across) → Close. "Loading roads from OpenStreetMap
+   (1 query)…", then a **grey road overlay**. "Overpass today: 1 / 100".
+3. **Entry A / Exit B:** tap inside: A and B jump onto the nearest road. Drag them: they slide along roads.
+4. Hotspots: put one on a square or park corner. The plan line follows streets, mostly around it.
+5. **Play zone**: Google Maps shows a plausible neighbourhood wander on the streets.
+6. Switch to **Car**: the overlay loses footpaths, the counter does **not** go up, and the route respects one-ways
+   and slows at sharp corners.
+7. Close and reopen the app → Zone: "Roads cached today", and the Overpass counter stays the same (0 requests).
+   **Refresh roads** → exactly +1.
+8. Drag a corner well outside the loaded area: "The shape grew beyond the loaded roads", then Refresh roads.
 
 ## How to verify on phone (Stage 6 test script)
 1. Install 0.6.0. Toolbar → **Indoor**. Zoom in on a building (zoom ≈ 19).
@@ -589,7 +684,7 @@ list of `LatLon`.
   `platforms;android-36` + `build-tools;36.0.0` with sdkmanager and point `sdk.dir` in `local.properties` at it.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
-- Verified 2026-11-10 in sandbox: `:core:test` 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
+- Verified 2026-11-10 in sandbox: `:core:test` 86/86 passed (Stage 7: Overpass parse/query, mode filters, polygon clipping, oneway, SCC, snapping, 150 walk + 150 car plans on/inside/on-time/accel/oneway/turn caps, dominant vs uniform, 30×30 perf); before: 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
 
 ## 0.2.2 (2026-11-10)
 - **Phone round 2:** the A/B markers now follow the map (map-layer approach confirmed ✅).

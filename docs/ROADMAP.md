@@ -17,7 +17,7 @@ Tick a stage (`[x]`) only when its acceptance checks pass and CI is green. Detai
 - [x] **Stage 5 — Traffic-aware car/bus.** _(0.5.2; phone-tested 2026-11-10)_ `TrafficProvider` (TomTom default, Google optional); Car/Bus auto-settings.
 - [x] **Stage 6 — Indoor zone + Gaussian-mixture 3D editor.** _(0.6.1; phone-tested 2026-11-10)_ Polygon zone, A/B on boundary, biased wandering by a
   user-edited 2D Gaussian mixture with 3D preview.
-- [ ] **Stage 7 — Street zone.** Overpass `RoadGraphProvider` (cached, ≤100 queries/day); wander on streets inside
+- [x] **Stage 7 — Street zone.** _(0.7.0; CI; phone test script in HANDOFF.md)_ Overpass `RoadGraphProvider` (cached, ≤100 queries/day); wander on streets inside
   the polygon.
 - [ ] **Stage 8 — Timeline.** Chain segments; enforce B(i) == A(i+1); first A = real location captured before mocking.
 - [ ] **Stage 9 — GPS noise.** Gauss–Markov error, environment-dependent accuracy, multipath jumps, consistent
