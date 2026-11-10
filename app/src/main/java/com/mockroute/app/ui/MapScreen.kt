@@ -205,7 +205,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 .mapHandlesDrag(
                     enabled = indoor,
                     cameraState = cameraState,
-                    handles = zoneHandles(zoneState),
+                    handles = zoneHandles(zoneState, vm.zone.lockEntry, vm.zone.lockExit),
                     onDrag = vm.zone::drag,
                     onTap = { id -> vm.zone.onHandleTap(id)?.let(vm::showMessage) },
                 ),
@@ -366,6 +366,21 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             val p2p = editor.mode == EditMode.PointToPoint
             EndpointLayers("a", if (p2p) shownA else null, pointLabels.first, HandleGreen)
             EndpointLayers("b", if (p2p) shownB else null, pointLabels.second, MockRed)
+
+            // Stage 9 debug overlay: true path (thin black line) vs injected points (purple; red during a jump).
+            val noiseSamples by com.mockroute.app.sim.NoiseDebug.samples.collectAsStateWithLifecycle()
+            val showNoise = settings?.noise?.debugOverlay == true && sim.isActive && noiseSamples.isNotEmpty()
+            val truthJson = remember(noiseSamples, showNoise) { if (showNoise) lineJson(noiseSamples.map { it.truth }) else EMPTY_FC }
+            val noisyJson = remember(noiseSamples, showNoise) {
+                if (!showNoise) EMPTY_FC
+                else noiseSamples.joinToString(",", prefix = """{"type":"FeatureCollection","features":[""", postfix = "]}") { s ->
+                    """{"type":"Feature","properties":{"color":"${if (s.multipath) "#D93025" else "#7B1FA2"}"},"geometry":{"type":"Point","coordinates":[${s.reported.lon},${s.reported.lat}]}}"""
+                }
+            }
+            val truthSource = rememberGeoJsonSource(GeoJsonData.JsonString(truthJson))
+            LineLayer(id = "noise-truth", source = truthSource, color = const(Color(0xFF202124)), width = const(2.dp))
+            val noisySource = rememberGeoJsonSource(GeoJsonData.JsonString(noisyJson))
+            CircleLayer(id = "noise-points", source = noisySource, color = feature["color"].convertToColor(), radius = const(3.dp), opacity = const(0.7f))
 
             val mockSource = rememberGeoJsonSource(GeoJsonData.JsonString(pointJson(sim.current?.position)))
             CircleLayer(

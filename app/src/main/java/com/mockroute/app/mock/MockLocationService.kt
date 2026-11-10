@@ -111,9 +111,16 @@ class MockLocationService : Service() {
                     return@launch
                 }
             }
+            // Stage 9: GPS noise for this run (settings read once at start; seed 0 = random).
+            val ns = runCatching { (application as com.mockroute.app.MockRouteApp).settings.current().noise }.getOrNull()
+            noise = if (ns != null && ns.enabled) com.mockroute.core.noise.GpsNoiseModel(ns, if (ns.seed != 0L) ns.seed else System.nanoTime()) else null
+            com.mockroute.app.sim.NoiseDebug.clear()
             tickLoop()
         }
     }
+
+    private var noise: com.mockroute.core.noise.GpsNoiseModel? = null
+    private var lastReported: KinematicState? = null
 
     private suspend fun CoroutineScope.tickLoop() {
         while (isActive) {
@@ -124,8 +131,20 @@ class MockLocationService : Service() {
             } else {
                 traj.stateAt(t)
             }
+            // Noise: the error keeps evolving every tick (also while paused/stationary). A null fix = a missed fix:
+            // nothing is injected this second.
+            val model = noise
+            val fix = model?.next(state, traj.environmentAt(t))
+            val reported = if (model == null) state else fix?.state
             try {
-                injector?.push(state)
+                if (reported != null) {
+                    if (fix != null) {
+                        delay(20L + fix.timeOffsetMs) // tick jitter ±20 ms around a fixed 20 ms offset
+                        com.mockroute.app.sim.NoiseDebug.add(com.mockroute.app.sim.NoiseDebug.Sample(state.position, reported.position, fix.multipath))
+                    }
+                    injector?.push(reported, fix)
+                    lastReported = reported
+                }
             } catch (e: SecurityException) {
                 // Mock app selection revoked mid-run.
                 fail(SimError.NotMockApp)
@@ -139,7 +158,7 @@ class MockLocationService : Service() {
                 SimulationState(
                     status = status,
                     spec = spec,
-                    current = state,
+                    current = lastReported ?: state,
                     elapsedSeconds = t,
                     finished = traj.isFinished(t),
                 )
@@ -202,6 +221,8 @@ class MockLocationService : Service() {
         trajectory = null
         spec = null
         lastState = null
+        lastReported = null
+        noise = null
         runningSinceMs = null
     }
 

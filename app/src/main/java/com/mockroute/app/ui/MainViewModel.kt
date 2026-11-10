@@ -324,7 +324,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val updated: com.mockroute.core.timeline.Segment? = when (seg) {
                 is com.mockroute.core.timeline.Segment.Route -> {
                     val st = editor.state.value
-                    if (st.mode == EditMode.PointToPoint) {
+                    val edited = if (st.mode == EditMode.PointToPoint) {
                         val a = st.a ?: seg.start
                         seg.copy(start = a, end = st.b ?: a, waypoints = emptyList(), mode = com.mockroute.core.timeline.RouteMode.PointToPoint, profile = st.profile, settings = keptSettings(seg.settings, _plan.value))
                     } else {
@@ -336,6 +336,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             profile = st.profile, settings = keptSettings(seg.settings, _plan.value),
                         )
                     }
+                    // Keep the route the editor actually computed (streets), so other steps can show it in grey.
+                    val routed = st.result?.takeUnless { st.loading }?.geometry?.simplify(1.0)?.points.orEmpty()
+                    val fixedStart = if (timelines.timeline.value.startFixed(i)) seg.start else edited.start
+                    val fixedEnd = if (timelines.timeline.value.endFixed(i)) seg.end else edited.end
+                    val final = edited.copy(start = fixedStart, end = fixedEnd)
+                    if (routed.size >= 2) final.copy(geometry = routed, geometryFor = final.inputs) else final.copy(geometry = emptyList(), geometryFor = emptyList())
                 }
                 is com.mockroute.core.timeline.Segment.IndoorZone, is com.mockroute.core.timeline.Segment.StreetZone -> {
                     val d = zone.state.value.def
@@ -402,6 +408,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         } catch (e: com.mockroute.core.timeline.TimelineFormatException) {
             _message.value = "Import failed: ${e.message}"
         }
+    }
+
+    fun setNoise(transform: (com.mockroute.core.noise.NoiseSettings) -> com.mockroute.core.noise.NoiseSettings) = viewModelScope.launch {
+        repo.setNoise(transform(settings.value?.noise ?: com.mockroute.core.noise.NoiseSettings()))
     }
 
     fun setTomTomKey(key: String) = viewModelScope.launch { repo.setTomTomApiKey(key) }

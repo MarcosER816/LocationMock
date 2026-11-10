@@ -133,6 +133,7 @@ fun TimelineScreen(vm: MainViewModel, onBack: () -> Unit, onEditOnMap: () -> Uni
                     },
                     onReroll = { tc.reroll(i) },
                     onResetAuto = { tc.resetToAuto(i) },
+                    onEnvironment = { tc.cycleEnvironment(i) },
                     onPlayFrom = { vm.playTimeline(i) },
                     onSnap = tc::fixSnap,
                     onConnector = tc::fixConnector,
@@ -254,6 +255,7 @@ private fun SegmentCard(
     onDelete: (() -> Unit)?,
     onReroll: () -> Unit,
     onResetAuto: () -> Unit,
+    onEnvironment: () -> Unit,
     onPlayFrom: () -> Unit,
     onSnap: (Issue) -> Unit,
     onConnector: (Issue) -> Unit,
@@ -317,6 +319,8 @@ private fun SegmentCard(
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = onEdit) { Text("Edit") }
                 TextButton(onClick = onReroll) { Text("Re-roll") }
+                // GPS reception for the noise model: automatic (indoor zone = indoor, others = urban) or forced.
+                TextButton(onClick = onEnvironment) { Text("GPS: ${seg.environment?.label ?: "auto"}") }
                 TextButton(onClick = onPlayFrom, enabled = plan?.playable == true && !stale) { Text("Play from here") }
                 if (onDelete != null) TextButton(onClick = onDelete) { Text("Delete") }
             }

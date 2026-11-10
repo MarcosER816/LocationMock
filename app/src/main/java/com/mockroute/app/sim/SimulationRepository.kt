@@ -25,6 +25,19 @@ data class SimulationState(
     val isActive: Boolean get() = status != SimStatus.Idle
 }
 
+/** Stage 9 debug overlay: the last ~10 min of (true position, injected position) pairs; empty when noise is off. */
+object NoiseDebug {
+    data class Sample(val truth: com.mockroute.core.geo.LatLon, val reported: com.mockroute.core.geo.LatLon, val multipath: Boolean)
+
+    private val _samples = MutableStateFlow<List<Sample>>(emptyList())
+    val samples: StateFlow<List<Sample>> = _samples.asStateFlow()
+
+    fun add(s: Sample) = _samples.update { (if (it.size >= 600) it.drop(it.size - 599) else it) + s }
+    fun clear() {
+        _samples.value = emptyList()
+    }
+}
+
 /** In-process source of truth for the simulation, written by [com.mockroute.app.mock.MockLocationService]. */
 object SimulationRepository {
     private val _state = MutableStateFlow(SimulationState())

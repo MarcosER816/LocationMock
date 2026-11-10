@@ -39,6 +39,71 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun NoiseSettingsSection(vm: MainViewModel) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val n = settings?.noise ?: return
+    Text("GPS noise", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Makes the simulated location jitter like a real phone's GPS instead of following a perfect line: a slowly " +
+            "wandering error, a changing accuracy circle, occasional jumps near buildings, a few missed fixes. " +
+            "Applies from the next Play.",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        com.mockroute.core.noise.NoisePreset.entries.forEach { p ->
+            androidx.compose.material3.FilterChip(selected = n.preset == p, onClick = { vm.setNoise { it.copy(preset = p) } }, label = { Text(p.label) })
+        }
+    }
+    if (n.enabled) {
+        com.mockroute.core.noise.Environment.entries.forEach { env ->
+            val scale = when (env) {
+                com.mockroute.core.noise.Environment.OpenSky -> n.openSkyScale
+                com.mockroute.core.noise.Environment.Urban -> n.urbanScale
+                com.mockroute.core.noise.Environment.Indoor -> n.indoorScale
+            }
+            val p = n.params(env)
+            Text(
+                String.format(Locale.US, "%s: error ×%.2f → typical accuracy ≈ %.0f m", env.label, scale, 1.51 * p.sigmaM),
+                style = MaterialTheme.typography.bodySmall,
+            )
+            androidx.compose.material3.Slider(
+                value = scale.toFloat(),
+                onValueChange = { v ->
+                    val x = (Math.round(v * 20) / 20.0)
+                    vm.setNoise {
+                        when (env) {
+                            com.mockroute.core.noise.Environment.OpenSky -> it.copy(openSkyScale = x)
+                            com.mockroute.core.noise.Environment.Urban -> it.copy(urbanScale = x)
+                            com.mockroute.core.noise.Environment.Indoor -> it.copy(indoorScale = x)
+                        }
+                    }
+                },
+                valueRange = 0.25f..3f,
+            )
+        }
+        var seedText by rememberSaveable { mutableStateOf(if (n.seed == 0L) "" else n.seed.toString()) }
+        OutlinedTextField(
+            value = seedText,
+            onValueChange = { t ->
+                seedText = t.filter { it.isDigit() }.take(15)
+                vm.setNoise { it.copy(seed = seedText.toLongOrNull() ?: 0L) }
+            },
+            label = { Text("Seed (empty = different every run)") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Debug overlay", style = MaterialTheme.typography.bodyMedium)
+                Text("Show the true path (black) and the injected points (purple; red = jump) on the map", style = MaterialTheme.typography.bodySmall)
+            }
+            Switch(checked = n.debugOverlay, onCheckedChange = { on -> vm.setNoise { it.copy(debugOverlay = on) } })
+        }
+    }
+}
+
 @Composable
 private fun RoutingSettings(vm: MainViewModel) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -151,6 +216,9 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onCheckSetup: () -> Un
                     onCheckedChange = { vm.setGmsLayer(it) },
                 )
             }
+
+            HorizontalDivider()
+            NoiseSettingsSection(vm)
 
             HorizontalDivider()
             RoutingSettings(vm)

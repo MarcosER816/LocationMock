@@ -96,6 +96,18 @@ class TimelineController(
     /** Editor result: fixed points stay where they are. */
     fun replaceKeepingFixed(i: Int, s: Segment) = edit { it.replaceKeepingFixed(i, s) }
 
+    /** Stage 9: cycle the step's reception environment: Auto → Open sky → Urban → Indoor → Auto. */
+    fun cycleEnvironment(i: Int) = edit { t ->
+        val s = t.segments.getOrNull(i) ?: return@edit t
+        val all = com.mockroute.core.noise.Environment.entries
+        val next = when (val e = s.environment) {
+            null -> all.first()
+            all.last() -> null
+            else -> all[e.ordinal + 1]
+        }
+        t.replaceKeepingFixed(i, s.withEnvironment(next))
+    }
+
     /** Back to data-driven speed & time for step [i]. */
     fun resetToAuto(i: Int) = edit { t ->
         when (val s = t.segments.getOrNull(i)) {

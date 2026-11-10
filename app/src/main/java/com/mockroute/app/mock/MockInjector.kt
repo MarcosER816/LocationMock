@@ -61,11 +61,11 @@ class MockInjector(context: Context, private val useGms: Boolean) {
 
     /** Pushes one fix to every active provider. */
     @SuppressLint("MissingPermission")
-    fun push(state: KinematicState) {
+    fun push(state: KinematicState, fix: com.mockroute.core.noise.NoisyFix? = null) {
         for (provider in active) {
-            lm.setTestProviderLocation(provider, state.toLocation(provider))
+            lm.setTestProviderLocation(provider, state.toLocation(provider, fix))
         }
-        gms?.setMockLocation(state.toLocation(GMS_PROVIDER))
+        gms?.setMockLocation(state.toLocation(GMS_PROVIDER, fix))
             ?.addOnFailureListener { Log.w(TAG, "GMS setMockLocation failed", it) }
     }
 
@@ -126,7 +126,7 @@ class MockInjector(context: Context, private val useGms: Boolean) {
 }
 
 /** Builds a complete Location as required by CLAUDE.md (fresh time + elapsedRealtimeNanos every tick). */
-fun KinematicState.toLocation(provider: String): Location = Location(provider).apply {
+fun KinematicState.toLocation(provider: String, fix: com.mockroute.core.noise.NoisyFix? = null): Location = Location(provider).apply {
     latitude = lat
     longitude = lon
     altitude = altitudeM
@@ -135,9 +135,10 @@ fun KinematicState.toLocation(provider: String): Location = Location(provider).a
     bearing = bearingDeg.toFloat()
     time = System.currentTimeMillis()
     elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
-    verticalAccuracyMeters = (accuracyM * 1.5).toFloat()
-    speedAccuracyMetersPerSecond = 0.5f
-    bearingAccuracyDegrees = if (speedMps > 0.3) 10f else 180f
+    // Stage 9: accuracies from the noise model when it is on; fixed plausible values otherwise.
+    verticalAccuracyMeters = (fix?.verticalAccuracyM ?: (accuracyM * 1.5)).toFloat()
+    speedAccuracyMetersPerSecond = (fix?.speedAccuracyMps ?: 0.5).toFloat()
+    bearingAccuracyDegrees = (fix?.bearingAccuracyDeg ?: if (speedMps > 0.3) 10.0 else 180.0).toFloat()
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         elapsedRealtimeUncertaintyNanos = 1_000_000.0
     }
