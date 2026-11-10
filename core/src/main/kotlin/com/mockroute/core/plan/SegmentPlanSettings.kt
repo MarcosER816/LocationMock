@@ -43,6 +43,8 @@ data class SegmentPlanSettings(
     val time: GammaSetting,
     val aMaxMps2: Double,
     val accelPreset: AccelerationPreset? = null,
+    /** Stage 4: correlation length of speed variations (m); null = profile default (150 walk / 400 car, bus). */
+    val correlationLengthM: Double? = null,
 ) {
     val vMin: Double get() = speed.lo
     val vMax: Double get() = speed.hi

@@ -107,6 +107,37 @@ class RouteGeometry private constructor(
         return of(points.filterIndexed { i, _ -> keep[i] })
     }
 
+    /**
+     * Nearest point on the route to [p]: returns (distance along the route, distance from the route) in metres.
+     * Local equirectangular projection per segment; O(n).
+     */
+    fun project(p: LatLon): Pair<Double, Double> {
+        require(points.isNotEmpty()) { "empty geometry" }
+        if (points.size == 1) return 0.0 to GeoMath.haversineMeters(p, points[0])
+        val kx = GeoMath.EARTH_RADIUS_M * Math.toRadians(1.0) * cos(Math.toRadians(p.lat))
+        val ky = GeoMath.EARTH_RADIUS_M * Math.toRadians(1.0)
+        var bestAlong = 0.0
+        var bestDist = Double.POSITIVE_INFINITY
+        for (i in 0 until points.size - 1) {
+            val ax = (points[i].lon - p.lon) * kx
+            val ay = (points[i].lat - p.lat) * ky
+            val bx = (points[i + 1].lon - p.lon) * kx
+            val by = (points[i + 1].lat - p.lat) * ky
+            val dx = bx - ax
+            val dy = by - ay
+            val len2 = dx * dx + dy * dy
+            val t = if (len2 == 0.0) 0.0 else (-(ax * dx + ay * dy) / len2).coerceIn(0.0, 1.0)
+            val cx = ax + t * dx
+            val cy = ay + t * dy
+            val dist = sqrt(cx * cx + cy * cy)
+            if (dist < bestDist) {
+                bestDist = dist
+                bestAlong = cumulative[i] + t * (cumulative[i + 1] - cumulative[i])
+            }
+        }
+        return bestAlong to bestDist
+    }
+
     /** Joins two routes; a duplicate joint point (< 0.5 m apart) is dropped. */
     operator fun plus(other: RouteGeometry): RouteGeometry {
         if (isEmpty) return other
