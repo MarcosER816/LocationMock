@@ -28,6 +28,7 @@ object I18n {
     private val ES: Map<String, String> = mapOf(
         // Toolbar and map
         "Map" to "Mapa", "Route" to "Ruta", "Trace" to "Trazar", "Draw" to "Dibujar", "Area" to "Zona",
+        "Trip" to "Viaje", "Paused" to "En pausa", "Simulating" to "Simulando", "km/h" to "km/h",
         "Be here" to "Estar aquí", "Walk here" to "Caminar aquí", "Selected point" to "Punto elegido", "Close" to "Cerrar",
         "Pause" to "Pausa", "Resume" to "Seguir", "Stop" to "Parar", "Skip" to "Siguiente", "OK" to "Vale",
         "Hide" to "Ocultar", "Open" to "Abrir", "Done" to "Listo", "Cancel" to "Cancelar", "Save" to "Guardar",

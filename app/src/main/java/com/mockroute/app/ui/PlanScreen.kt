@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -144,13 +143,13 @@ private fun FeasibilityBanner(
     val ok = result.feasible
     Card(
         colors = CardDefaults.cardColors(
-            containerColor = if (ok) Color(0xFFE6F4EA) else Color(0xFFFCE8E6),
-            contentColor = Color(0xFF202124),
+            containerColor = if (ok) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.errorContainer,
+            contentColor = MaterialTheme.colorScheme.onSurface,
         ),
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (ok) {
-                Text("Feasible ✓", style = MaterialTheme.typography.titleMedium, color = Color(0xFF137333))
+                Text("Feasible ✓", style = MaterialTheme.typography.titleMedium, color = com.mockroute.app.ui.theme.AppColors.Green)
                 Text("Needs ≥ ${fmtKmh(result.requiredAverageMps)} average to arrive by ${fmtHmm(p.tMax)}.")
                 Text(
                     "Fastest possible at ${fmtKmh(p.vMax)} with a = ${"%.1f".format(Locale.US, p.aMaxMps2)} m/s²: " +
@@ -158,7 +157,7 @@ private fun FeasibilityBanner(
                     style = MaterialTheme.typography.bodySmall,
                 )
             } else {
-                Text("Not feasible", style = MaterialTheme.typography.titleMedium, color = Color(0xFFC5221F))
+                Text("Not feasible", style = MaterialTheme.typography.titleMedium, color = com.mockroute.app.ui.theme.AppColors.Pink)
                 result.issues.forEach { Text("• " + issueText(it, d, p, result)) }
                 if (Feasibility.Issue.TooSlow in result.issues || Feasibility.Issue.NoSpeed in result.issues) {
                     CoupledPanel(d, p, onApply)
@@ -189,7 +188,7 @@ private fun CoupledPanel(d: Double, p: SegmentPlanSettings, onApply: (CoupledSli
     if (c.tooLongForCaps) {
         Text(
             "Route too long for the caps: even 100 km/h for 6:00 isn't enough. Shorten the segment.",
-            color = Color(0xFFC5221F),
+            color = com.mockroute.app.ui.theme.AppColors.Pink,
         )
         return
     }

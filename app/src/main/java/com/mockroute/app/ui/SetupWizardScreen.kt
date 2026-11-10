@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -187,9 +186,9 @@ private fun StepCard(
     actions: @Composable () -> Unit,
 ) {
     val (badgeColor, badgeText) = when (state) {
-        Check.Ok -> Color(0xFF1E8E3E) to "✓"
-        Check.Missing -> Color(0xFFD93025) to "!"
-        Check.Info -> Color(0xFF5F6368) to "i"
+        Check.Ok -> com.mockroute.app.ui.theme.AppColors.Green to "✓"
+        Check.Missing -> com.mockroute.app.ui.theme.AppColors.Pink to "!"
+        Check.Info -> com.mockroute.app.ui.theme.AppColors.TextDim to "i"
     }
     Card(
         Modifier.fillMaxWidth(),
@@ -200,10 +199,10 @@ private fun StepCard(
     ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = CircleShape, color = badgeColor, modifier = Modifier.size(28.dp)) {
+                Surface(shape = MaterialTheme.shapes.small, color = badgeColor.copy(alpha = 0.18f), modifier = Modifier.size(30.dp)) {
                     Text(
                         badgeText,
-                        color = Color.White,
+                        color = badgeColor,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(top = 3.dp),
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,

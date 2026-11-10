@@ -1,5 +1,6 @@
 package com.mockroute.app.ui
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -11,6 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -31,11 +33,11 @@ fun SpeedLegend(scale: SpeedColorScale, modifier: Modifier = Modifier) {
     val colors = remember(scale) {
         List(17) { i -> Color(scale.colorFor(scale.low + (scale.high - scale.low) * i / 16.0)) }
     }
-    Surface(modifier, shape = MaterialTheme.shapes.medium, shadowElevation = 3.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.92f)) {
-        Column(Modifier.padding(horizontal = 10.dp, vertical = 6.dp).width(150.dp)) {
+    Surface(modifier, shape = MaterialTheme.shapes.medium, shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f), border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp).width(150.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Speed (km/h)", style = MaterialTheme.typography.labelSmall)
             androidx.compose.foundation.layout.Box(
-                Modifier.fillMaxWidth().height(8.dp).drawWithCache {
+                Modifier.fillMaxWidth().height(8.dp).clip(androidx.compose.foundation.shape.RoundedCornerShape(4.dp)).drawWithCache {
                     val brush = Brush.horizontalGradient(colors)
                     onDrawBehind { drawRect(brush) }
                 },

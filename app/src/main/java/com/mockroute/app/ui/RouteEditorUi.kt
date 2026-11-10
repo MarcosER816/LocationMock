@@ -2,6 +2,8 @@ package com.mockroute.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
@@ -14,14 +16,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -69,32 +67,51 @@ fun ModeToolbar(
         EditMode.Streets -> if (snap) ToolbarItem.Streets else ToolbarItem.Free
         EditMode.Indoor -> ToolbarItem.Indoor
     }
-    Surface(shape = MaterialTheme.shapes.extraLarge, shadowElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
-        SingleChoiceSegmentedButtonRow(Modifier.padding(4.dp).fillMaxWidth()) {
-            ToolbarItem.entries.forEachIndexed { i, item ->
-                SegmentedButton(
-                    selected = item == selected,
-                    onClick = {
-                        when (item) {
-                            ToolbarItem.Explore -> onMode(EditMode.Explore)
-                            ToolbarItem.P2P -> onMode(EditMode.PointToPoint)
-                            ToolbarItem.Streets -> onStreets()
-                            ToolbarItem.Free -> onFreeDraw()
-                            ToolbarItem.Indoor -> onMode(EditMode.Indoor)
-                        }
-                    },
-                    shape = SegmentedButtonDefaults.itemShape(i, ToolbarItem.entries.size, baseShape = com.mockroute.app.ui.theme.AppShapes.Button),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = item.color,
-                        activeContentColor = Color(0xFF0D1117),
-                        inactiveContainerColor = MaterialTheme.colorScheme.surface,
-                        inactiveContentColor = item.color,
-                    ),
-                    icon = {},
-                ) { Text(item.label, style = MaterialTheme.typography.labelLarge, maxLines = 1) }
+    // One floating bar; the chosen mode fills with its own colour, the others show it as text.
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+        shadowElevation = 8.dp,
+        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(Modifier.padding(4.dp).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            ToolbarItem.entries.forEach { item ->
+                val on = item == selected
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .height(40.dp)
+                        .background(if (on) item.color else Color.Transparent, MaterialTheme.shapes.small)
+                        .clickable(role = androidx.compose.ui.semantics.Role.Tab) {
+                            when (item) {
+                                ToolbarItem.Explore -> onMode(EditMode.Explore)
+                                ToolbarItem.P2P -> onMode(EditMode.PointToPoint)
+                                ToolbarItem.Streets -> onStreets()
+                                ToolbarItem.Free -> onFreeDraw()
+                                ToolbarItem.Indoor -> onMode(EditMode.Indoor)
+                            }
+                        },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        item.label,
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (on) com.mockroute.app.ui.theme.AppColors.OnVibrant else item.color.copy(alpha = if (item == ToolbarItem.Explore) 0.75f else 0.95f),
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
+}
+
+/** Panel edge colour: the colour of the mode being edited. */
+internal fun sheetAccent(state: RouteEditorState): Color = when (state.mode) {
+    EditMode.PointToPoint -> com.mockroute.app.ui.theme.AppColors.Blue
+    EditMode.Streets -> if (state.snap) com.mockroute.app.ui.theme.AppColors.Cyan else com.mockroute.app.ui.theme.AppColors.Amber
+    EditMode.Indoor -> com.mockroute.app.ui.theme.AppColors.Purple
+    EditMode.Explore -> com.mockroute.app.ui.theme.AppColors.Outline
 }
 
 @Composable
@@ -124,10 +141,7 @@ fun SegmentSheet(
     trafficCacheInfo: String = "",
 ) {
     val result = state.result
-    Card(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-    ) {
+    MapPanel(accent = sheetAccent(state)) {
         // Scrolls inside the bottom area so the map keeps at least half of the screen.
         Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // Summary line.

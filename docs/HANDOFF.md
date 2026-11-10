@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — 1.0.1 (custom map style with 3-D buildings; provider time as the default) — CI + release `latest-debug`. Device checklist: docs/TESTING.md (not run yet)._
+_Last updated: 2026-11-10 — 1.1.0 (visual redesign + detailed dark map with every building) — CI + release `latest-debug`. Device checklist: docs/TESTING.md (not run yet)._
 
 ## Done
 ### Stage 10 — polish and reliability (1.0.0)
@@ -1119,3 +1119,34 @@ Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in
 13. Settings (gear) → Check setup reopens the wizard; the Google Play services switch is present.
 14. Note anything odd (flicker back to the real location, the service killed in the background, style fallback,
     etc.) under "Known issues".
+
+## 1.1.0 — visual redesign (user request, 2026-11-10)
+- **Map: as many buildings and details as possible, Google-Maps-like.** `tools/make_map_style.py` now builds
+  `assets/map_dark.json` from OpenFreeMap **liberty** (all OpenMapTiles layers) instead of the sparse `dark` style:
+  building footprints from **zoom 13**, **3-D from zoom 14** (taller = lighter, vertical gradient, rising in
+  between 14 and 14.6), **house numbers from zoom 17**, shops/POIs with their icons from zoom 14 (all ranks by 16)
+  and **category-coloured names** (food orange, shops blue, parks green, health pink, transit sky, culture lilac),
+  parks/grass/pitches/cemeteries dark green, hospitals/schools tinted, water blue, motorways muted amber, bridges,
+  tunnels (faded), rail, road shields, one-way arrows. Labels use the **local name first**. All symbol layers are
+  drawn above the 3-D buildings. 112 layers, 49 KB. Rendered and checked with MapLibre GL JS in headless Chromium
+  (Madrid z12–17, flat and tilted); not yet seen on the phone.
+- **Theme** (`ui/theme/Theme.kt`): calmer blue-black neutrals in even tonal steps, slightly brighter accents,
+  no surface tint, semibold titles / medium labels, larger rounded corners (buttons 12 dp, panels 20 dp),
+  `Space` tokens. Still always dark, no dynamic colour.
+- **Widgets** (`ui/Widgets.kt`): `Card` wrapper (raised tone + hairline edge; the files no longer import
+  Material's Card), `MapPanel` (floating map sheet with an edge tinted by the kind of thing), `MapControlStack` /
+  `MapControl` / `MapControlDivider` (stacked 48-dp square map buttons), `Tag` (tinted label chip), `PanelHandle`.
+- **Map screen:** mode bar is one floating bar whose selected mode fills with its colour; Settings / 3D (shows
+  "2D" when tilted) / My location / Mocked location are one stacked control; Trip is a green square button with
+  its name; all bottom banners and sheets are `MapPanel`s; the selected-point sheet shows distance and walk time
+  as tags; the simulation card has a big speed read-out, a Simulating/Paused tag and Pause / Skip / Stop (pink)
+  buttons in one row; snackbar and attribution restyled.
+- **Map overlays** use the app palette with near-black halos/casings instead of white (route, endpoints, traffic
+  points, plan label, timeline points, area handles); real and mocked locations get a soft halo like the map
+  apps' blue dot.
+- **Leftover light colours fixed:** the feasibility card (was light green/pink with dark text), setup-wizard
+  badges, timeline/area map colours.
+- New Spanish entries: Trip, Paused, Simulating.
+- Build: `:core:test` and `:app:assembleDebug` pass locally (Android SDK installed in the session).
+- **Next:** check on the POCO — readability of POI icons on the dark map, 3-D performance in dense city centres
+  at zoom 14–15 (if it stutters, raise the 3-D minzoom in the script to 15), and how the new panels feel.

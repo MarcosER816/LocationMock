@@ -16,14 +16,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Snackbar
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -76,12 +74,14 @@ import org.maplibre.spatialk.geojson.Position
 import java.util.Locale
 import kotlin.time.Duration.Companion.milliseconds
 
-private val RealBlue = Color(0xFF1A73E8)
-private val MockRed = Color(0xFFD93025)
-private val PickOrange = Color(0xFFF29900)
-private val RouteBlue = Color(0xFF1565C0)
-private val FallbackGrey = Color(0xFF757575)
-private val HandleGreen = Color(0xFF1E8E3E)
+// Map overlay colours: the app's vibrant palette, outlined in near-black so they read on streets and 3-D roofs.
+private val RealBlue = com.mockroute.app.ui.theme.AppColors.Blue
+private val MockRed = com.mockroute.app.ui.theme.AppColors.Pink
+private val PickOrange = com.mockroute.app.ui.theme.AppColors.Amber
+private val RouteBlue = com.mockroute.app.ui.theme.AppColors.Blue
+private val FallbackGrey = Color(0xFF8A96A5)
+private val HandleGreen = com.mockroute.app.ui.theme.AppColors.Green
+private val Halo = com.mockroute.app.ui.theme.AppColors.MapHalo
 
 @Composable
 fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> Unit, onOpenTimeline: () -> Unit = {}) {
@@ -250,8 +250,9 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             LineLayer(
                 id = "edited-route-casing",
                 source = routeSource,
-                color = const(Color.White),
-                width = const(8.dp),
+                color = const(Halo),
+                width = const(9.dp),
+                opacity = const(0.85f),
                 cap = const(LineCap.Round),
                 join = const(LineJoin.Round),
             )
@@ -261,7 +262,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 source = routeSource,
                 visible = ready == null,
                 color = const(if (editedResult?.isFallback == true) FallbackGrey else RouteBlue),
-                width = const(5.dp),
+                width = const(5.5.dp),
                 cap = const(LineCap.Round),
                 join = const(LineJoin.Round),
             )
@@ -282,9 +283,9 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 textField = format(span(const(ready?.generated?.label ?: ""))),
                 textFont = const(listOf("Noto Sans Bold")),
                 textSize = const(1.0.em),
-                textColor = const(Color(0xFF202124)),
-                textHaloColor = const(Color.White),
-                textHaloWidth = const(4.dp),
+                textColor = const(Color.White),
+                textHaloColor = const(Halo),
+                textHaloWidth = const(3.dp),
                 textOffset = offset(0.em, (-1.6).em),
                 textAllowOverlap = const(true),
                 textIgnorePlacement = const(true),
@@ -300,9 +301,9 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             CircleLayer(
                 id = "traffic-worst",
                 source = worstSource,
-                color = const(Color(0xFFC5221F)),
+                color = const(MockRed),
                 radius = const(9.dp),
-                strokeColor = const(Color.White),
+                strokeColor = const(Halo),
                 strokeWidth = const(3.dp),
             )
             SymbolLayer(
@@ -311,9 +312,9 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 textField = format(span(feature["label"].asString())),
                 textFont = const(listOf("Noto Sans Bold")),
                 textSize = const(0.9.em),
-                textColor = const(Color(0xFFC5221F)),
-                textHaloColor = const(Color.White),
-                textHaloWidth = const(3.dp),
+                textColor = const(MockRed),
+                textHaloColor = const(Halo),
+                textHaloWidth = const(2.5.dp),
                 textOffset = offset(0.em, 1.5.em),
                 textAllowOverlap = const(true),
                 textIgnorePlacement = const(true),
@@ -325,7 +326,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 source = inspectSource,
                 color = const(Color.White),
                 radius = const(7.dp),
-                strokeColor = const(Color(0xFF202124)),
+                strokeColor = const(Halo),
                 strokeWidth = const(3.dp),
             )
 
@@ -356,10 +357,19 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 id = "walk-path",
                 source = pathSource,
                 color = const(MockRed),
-                width = const(3.dp),
-                opacity = const(0.6f),
+                width = const(4.dp),
+                opacity = const(0.7f),
+                cap = const(LineCap.Round),
+                join = const(LineJoin.Round),
             )
             val realSource = rememberGeoJsonSource(GeoJsonData.JsonString(pointJson(real?.let { LatLon(it.lat, it.lon) })))
+            CircleLayer(
+                id = "real-location-halo",
+                source = realSource,
+                color = const(RealBlue),
+                radius = const(22.dp),
+                opacity = const(if (sim.isActive) 0.06f else 0.16f),
+            )
             CircleLayer(
                 id = "real-location",
                 source = realSource,
@@ -407,13 +417,14 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 }
             }
             val circleSource = rememberGeoJsonSource(GeoJsonData.JsonString(circleJson))
-            FillLayer(id = "noise-accuracy", source = circleSource, color = const(Color(0xFF1A73E8)), opacity = const(0.15f), outlineColor = const(Color(0xFF1A73E8)))
+            FillLayer(id = "noise-accuracy", source = circleSource, color = const(RealBlue), opacity = const(0.15f), outlineColor = const(RealBlue))
             val truthSource = rememberGeoJsonSource(GeoJsonData.JsonString(truthJson))
-            LineLayer(id = "noise-truth", source = truthSource, color = const(Color(0xFF202124)), width = const(2.dp))
+            LineLayer(id = "noise-truth", source = truthSource, color = const(Color.White), width = const(2.dp), opacity = const(0.7f))
             val noisySource = rememberGeoJsonSource(GeoJsonData.JsonString(noisyJson))
             CircleLayer(id = "noise-points", source = noisySource, color = feature["color"].convertToColor(), radius = const(3.dp), opacity = const(0.7f))
 
             val mockSource = rememberGeoJsonSource(GeoJsonData.JsonString(pointJson(sim.current?.position)))
+            CircleLayer(id = "mock-location-halo", source = mockSource, color = const(MockRed), radius = const(22.dp), opacity = const(0.18f))
             CircleLayer(
                 id = "mock-location",
                 source = mockSource,
@@ -444,47 +455,64 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 vm.setEditMode(EditMode.Streets)
                 vm.editor.setSnap(true)
             })
-            SmallFloatingActionButton(onClick = onOpenSettings) {
-                Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings")
-            }
-            // Tilt the map to see the buildings in 3-D (and back to flat).
-            SmallFloatingActionButton(
-                onClick = {
-                    scope.launch {
-                        val tilted = cameraState.position.tilt > 5.0
-                        cameraState.animateTo(
-                            cameraState.position.copy(tilt = if (tilted) 0.0 else 55.0, zoom = if (tilted) cameraState.position.zoom else maxOf(cameraState.position.zoom, 16.0)),
-                            duration = com.mockroute.app.ui.theme.AppMotion.DURATION_MS.milliseconds,
-                        )
+            // Stacked square map controls, then the trip button in its own colour.
+            MapControlStack {
+                MapControl(onClick = onOpenSettings, description = "Settings") {
+                    Icon(painterResource(R.drawable.ic_settings), contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+                }
+                MapControlDivider()
+                // Tilt the map to see the buildings in 3-D (and back to flat).
+                val tilted = cameraState.position.tilt > 5.0
+                MapControl(
+                    onClick = {
+                        scope.launch {
+                            val nowTilted = cameraState.position.tilt > 5.0
+                            cameraState.animateTo(
+                                cameraState.position.copy(tilt = if (nowTilted) 0.0 else 55.0, zoom = if (nowTilted) cameraState.position.zoom else maxOf(cameraState.position.zoom, 16.0)),
+                                duration = com.mockroute.app.ui.theme.AppMotion.DURATION_MS.milliseconds,
+                            )
+                        }
+                    },
+                    description = "3D view",
+                ) {
+                    androidx.compose.material3.Text(
+                        if (tilted) "2D" else "3D",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (tilted) RealBlue else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                MapControlDivider()
+                MapControl(
+                    onClick = {
+                        if (sim.isActive) {
+                            // Don't read the location now: it would be our own mock. Show the stored real fix.
+                            real?.let { flyTo(LatLon(it.lat, it.lon)) }
+                        } else {
+                            vm.captureRealLocation { fix -> fix?.let { flyTo(LatLon(it.lat, it.lon)) } }
+                        }
+                    },
+                    description = "My real location",
+                ) {
+                    if (capturing) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(painterResource(R.drawable.ic_my_location), contentDescription = null, tint = RealBlue)
                     }
-                },
-                modifier = Modifier.semantics { contentDescription = "3D view" },
-            ) { androidx.compose.material3.Text("3D", style = MaterialTheme.typography.labelLarge) }
+                }
+                if (sim.current != null) {
+                    MapControlDivider()
+                    MapControl(onClick = { sim.current?.let { flyTo(it.position) } }, description = "Mocked location") {
+                        Icon(painterResource(R.drawable.ic_notification), contentDescription = null, tint = MockRed)
+                    }
+                }
+            }
             SmallFloatingActionButton(
                 onClick = onOpenTimeline,
                 modifier = Modifier.semantics { contentDescription = "Trip" },
+                shape = MaterialTheme.shapes.medium,
                 containerColor = com.mockroute.app.ui.theme.AppColors.Green,
-                contentColor = Color(0xFF00210F),
-            ) { Text("⏱", style = MaterialTheme.typography.titleMedium) }
-            SmallFloatingActionButton(onClick = {
-                if (sim.isActive) {
-                    // Don't read the location now: it would be our own mock. Show the stored real fix.
-                    real?.let { flyTo(LatLon(it.lat, it.lon)) }
-                } else {
-                    vm.captureRealLocation { fix -> fix?.let { flyTo(LatLon(it.lat, it.lon)) } }
-                }
-            }) {
-                if (capturing) {
-                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
-                    Icon(painterResource(R.drawable.ic_my_location), contentDescription = "My real location", tint = RealBlue)
-                }
-            }
-            if (sim.current != null) {
-                SmallFloatingActionButton(onClick = { sim.current?.let { flyTo(it.position) } }) {
-                    Icon(painterResource(R.drawable.ic_notification), contentDescription = "Mocked location", tint = MockRed)
-                }
-            }
+                contentColor = com.mockroute.app.ui.theme.AppColors.OnVibrant,
+            ) { Text("Trip", style = MaterialTheme.typography.labelLarge) }
         }
 
         // Bottom: attribution + sheets.
@@ -492,13 +520,11 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).heightIn(max = maxBottom),
         ) {
             if (!online) {
-                Surface(Modifier.padding(horizontal = 12.dp, vertical = 2.dp), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.tertiaryContainer) {
-                    Text("Offline: showing saved map and routes only", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
-                }
+                Tag("Offline: showing saved map and routes only", com.mockroute.app.ui.theme.AppColors.Amber, Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
             }
             resumable?.takeIf { !sim.isActive }?.let { r ->
-                Surface(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, shadowElevation = 4.dp) {
-                    Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                MapPanel(accent = com.mockroute.app.ui.theme.AppColors.Green) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         androidx.compose.material3.Text(
                             "“${r.name}” ${I18n.tr("was interrupted at")} ${(100 * r.elapsedS / r.totalS.coerceAtLeast(1.0)).toInt()} %",
                             style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
@@ -509,13 +535,8 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 }
             }
             editingSegment?.let { k ->
-                Surface(
-                    Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                    shape = MaterialTheme.shapes.large,
-                    color = MaterialTheme.colorScheme.tertiaryContainer,
-                    shadowElevation = 4.dp,
-                ) {
-                    Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                MapPanel(accent = com.mockroute.app.ui.theme.AppColors.Green) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Editing timeline segment ${k + 1}", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         TextButton(onClick = { vm.finishEditingSegment(apply = false) }) { Text("Cancel") }
                         Button(onClick = {
@@ -526,8 +547,8 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 }
             }
             if (showTimeline && editingSegment == null) {
-                Surface(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), shape = MaterialTheme.shapes.large, shadowElevation = 4.dp) {
-                    Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                MapPanel(accent = com.mockroute.app.ui.theme.AppColors.Green) {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Timeline “${timeline.name}”: drag the first or last point to move it", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                         TextButton(onClick = { vm.showTimelineOnMap(false) }) { Text("Hide") }
                         TextButton(onClick = onOpenTimeline) { Text("Open") }
@@ -535,12 +556,8 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 }
             }
             inspect?.let { ins ->
-                Surface(
-                    Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                    shape = MaterialTheme.shapes.large,
-                    shadowElevation = 4.dp,
-                ) {
-                    Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                MapPanel {
+                    Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(ins.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         TextButton(onClick = { inspect = null }) { Text("OK") }
                     }
@@ -552,7 +569,11 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     vm.consumeMessage()
                 }
                 Snackbar(
-                    modifier = Modifier.padding(12.dp),
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    shape = MaterialTheme.shapes.large,
+                    containerColor = com.mockroute.app.ui.theme.AppColors.SurfaceHighest,
+                    contentColor = MaterialTheme.colorScheme.onSurface,
+                    actionContentColor = RealBlue,
                     action = { TextButton(onClick = vm::consumeMessage) { Text("OK") } },
                 ) { Text(msg) }
             }
@@ -624,8 +645,9 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .align(Alignment.End)
-                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.7f))
-                    .padding(horizontal = 4.dp)
+                    .padding(end = 8.dp)
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.6f), MaterialTheme.shapes.extraSmall)
+                    .padding(horizontal = 6.dp, vertical = 1.dp)
                     .padding(end = 6.dp, bottom = 2.dp),
             )
         }
@@ -665,7 +687,7 @@ internal fun EndpointLayers(id: String, point: LatLon?, label: String, color: Co
         source = source,
         color = const(color),
         radius = const(15.dp),
-        strokeColor = const(Color.White),
+        strokeColor = const(Halo),
         strokeWidth = const(3.dp),
     )
     SymbolLayer(
@@ -674,7 +696,7 @@ internal fun EndpointLayers(id: String, point: LatLon?, label: String, color: Co
         textField = format(span(const(label))),
         textFont = const(listOf("Noto Sans Bold")),
         textSize = const(1.1.em),
-        textColor = const(Color.White),
+        textColor = const(com.mockroute.app.ui.theme.AppColors.OnVibrant),
         textAllowOverlap = const(true),
         textIgnorePlacement = const(true),
     )
@@ -688,28 +710,28 @@ private fun PointSheet(
     onWalk: () -> Unit,
     onClose: () -> Unit,
 ) {
-    Card(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-    ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    MapPanel(accent = com.mockroute.app.ui.theme.AppColors.Amber) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
+                Box(Modifier.size(36.dp).background(PickOrange.copy(alpha = 0.16f), MaterialTheme.shapes.small), contentAlignment = Alignment.Center) {
+                    Box(Modifier.size(12.dp).background(PickOrange, androidx.compose.foundation.shape.CircleShape))
+                }
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
                     Text("Selected point", style = MaterialTheme.typography.titleMedium)
                     Text(
                         String.format(Locale.US, "%.6f, %.6f", point.lat, point.lon),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    distanceFromM?.let {
-                        val walk = it / 1.4
-                        Text(
-                            "${formatDistance(it)} away · walk ≈ ${formatDuration(walk)} at 5 km/h",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
                 }
                 TextButton(onClick = onClose) { Text("Close") }
+            }
+            distanceFromM?.let {
+                val walk = it / 1.4
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Tag("${formatDistance(it)} away", RealBlue)
+                    Tag("walk ≈ ${formatDuration(walk)} at 5 km/h", HandleGreen)
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onSimulate, modifier = Modifier.weight(1f)) { Text("Be here") }
@@ -732,35 +754,50 @@ private fun SimulationCard(
     onSkip: (() -> Unit)? = null,
     timelineLabel: String? = null,
 ) {
-    Surface(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-        shape = MaterialTheme.shapes.large,
-        color = MaterialTheme.colorScheme.secondaryContainer,
-        shadowElevation = 6.dp,
-    ) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    if (status == SimStatus.Paused) "Paused · $label" else label,
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Text(String.format(Locale.US, "%.1f km/h", speedKmh), style = MaterialTheme.typography.bodyMedium)
-                timelineLabel?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                point?.let {
-                    Text(
-                        String.format(Locale.US, "%.5f, %.5f", it.lat, it.lon) +
-                            (remainingM?.let { r -> " · ${formatDistance(r)} left" } ?: ""),
-                        style = MaterialTheme.typography.bodySmall,
+    val paused = status == SimStatus.Paused
+    val accent = if (paused) PickOrange else HandleGreen
+    MapPanel(accent = accent) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Tag(if (paused) "Paused" else "Simulating", accent)
+                        timelineLabel?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
+                    }
+                    Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 2, modifier = Modifier.padding(top = 6.dp))
+                }
+                // Big speed read-out, like a car's dashboard.
+                Column(horizontalAlignment = Alignment.End) {
+                    androidx.compose.material3.Text(
+                        String.format(Locale.US, "%.0f", speedKmh),
+                        style = MaterialTheme.typography.headlineMedium,
+                        color = accent,
                     )
+                    Text("km/h", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            onSkip?.let { TextButton(onClick = it) { Text("Skip") } }
-            if (status == SimStatus.Paused) {
-                OutlinedButton(onClick = onResume) { Text("Resume") }
-            } else {
-                OutlinedButton(onClick = onPause) { Text("Pause") }
+            point?.let {
+                Text(
+                    String.format(Locale.US, "%.5f, %.5f", it.lat, it.lon) +
+                        (remainingM?.let { r -> " · ${formatDistance(r)} left" } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
-            Button(onClick = onStop, modifier = Modifier.padding(start = 8.dp)) { Text("Stop") }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (paused) {
+                    FilledTonalButton(onClick = onResume, modifier = Modifier.weight(1f)) { Text("Resume") }
+                } else {
+                    FilledTonalButton(onClick = onPause, modifier = Modifier.weight(1f)) { Text("Pause") }
+                }
+                onSkip?.let { OutlinedButton(onClick = it, modifier = Modifier.weight(1f)) { Text("Skip") } }
+                androidx.compose.material3.Button(
+                    onClick = onStop,
+                    modifier = Modifier.weight(1f),
+                    shape = com.mockroute.app.ui.theme.AppShapes.Button,
+                    colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = MockRed, contentColor = com.mockroute.app.ui.theme.AppColors.OnVibrant),
+                ) { Text("Stop") }
+            }
         }
     }
 }

@@ -38,7 +38,7 @@ import java.util.Locale
 import kotlin.math.pow
 
 private const val EMPTY = """{"type":"FeatureCollection","features":[]}"""
-private val ZonePurple = Color(0xFF7B1FA2)
+private val ZonePurple = com.mockroute.app.ui.theme.AppColors.Purple
 
 /**
  * Drag any of [handles] (id → position, drawn as map layers). Same technique as [endpointDrag]: a touch-down within
@@ -98,7 +98,7 @@ fun ZoneLayers(
         if (roads == null || def.kind != com.mockroute.core.zone.ZoneKind.Streets) EMPTY else roadsJson(roads, state)
     }
     val roadSource = rememberGeoJsonSource(GeoJsonData.JsonString(roadsJson))
-    LineLayer(id = "zone-roads", source = roadSource, color = const(Color(0xFF616161)), width = const(4.dp), opacity = const(0.55f), cap = const(LineCap.Round), join = const(LineJoin.Round))
+    LineLayer(id = "zone-roads", source = roadSource, color = const(Color(0xFF9AA6B4)), width = const(4.dp), opacity = const(0.55f), cap = const(LineCap.Round), join = const(LineJoin.Round))
     // Outline / fill.
     val shapeJson = remember(def.vertices, def.closed) { shapeJson(def.vertices, def.closed) }
     val shape = rememberGeoJsonSource(GeoJsonData.JsonString(shapeJson))
@@ -121,8 +121,8 @@ fun ZoneLayers(
         textField = format(span(feature["label"].asString())),
         textFont = const(listOf("Noto Sans Bold")),
         textSize = const(0.95.em),
-        textColor = const(Color(0xFF202124)),
-        textHaloColor = const(Color.White),
+        textColor = const(Color.White),
+        textHaloColor = const(com.mockroute.app.ui.theme.AppColors.MapHalo),
         textHaloWidth = const(4.dp),
         textAllowOverlap = const(true),
         textIgnorePlacement = const(true),
@@ -130,7 +130,7 @@ fun ZoneLayers(
 
     // Vertices.
     val vertSource = rememberGeoJsonSource(GeoJsonData.JsonString(pointsJson(def.vertices, def.vertices.map { "" })))
-    CircleLayer(id = "zone-vertices", source = vertSource, color = const(Color.White), radius = const(6.dp), strokeColor = const(ZonePurple), strokeWidth = const(3.dp))
+    CircleLayer(id = "zone-vertices", source = vertSource, color = const(com.mockroute.app.ui.theme.AppColors.Text), radius = const(6.dp), strokeColor = const(ZonePurple), strokeWidth = const(3.dp))
 
     // Hotspot centres (numbered); the selected one bigger.
     val comps = remember(def) { state.components() }
@@ -139,7 +139,7 @@ fun ZoneLayers(
     val means = rememberGeoJsonSource(GeoJsonData.JsonString(if (def.closed && state.tool == ZoneTool.Hotspots) meansJson else EMPTY))
     val sel = rememberGeoJsonSource(GeoJsonData.JsonString(if (def.closed && state.tool == ZoneTool.Hotspots) selJson else EMPTY))
     CircleLayer(id = "zone-mean-selected", source = sel, color = const(Color(0x33FFFFFF)), radius = const(17.dp), strokeColor = const(ZonePurple), strokeWidth = const(2.dp))
-    CircleLayer(id = "zone-means", source = means, color = const(ZonePurple), radius = const(11.dp), strokeColor = const(Color.White), strokeWidth = const(2.dp))
+    CircleLayer(id = "zone-means", source = means, color = const(ZonePurple), radius = const(11.dp), strokeColor = const(com.mockroute.app.ui.theme.AppColors.MapHalo), strokeWidth = const(2.dp))
     SymbolLayer(
         id = "zone-means-label",
         source = means,
@@ -152,8 +152,8 @@ fun ZoneLayers(
     )
 
     // Entry/exit, always on the edge.
-    EndpointLayers("zone-a", def.entry, labels.first, Color(0xFF1E8E3E))
-    EndpointLayers("zone-b", def.exit, labels.second, Color(0xFFD93025))
+    EndpointLayers("zone-a", def.entry, labels.first, com.mockroute.app.ui.theme.AppColors.Green)
+    EndpointLayers("zone-b", def.exit, labels.second, com.mockroute.app.ui.theme.AppColors.Pink)
 }
 
 /** Each undirected road once (twin edges skipped), as LineStrings. */

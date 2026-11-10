@@ -66,14 +66,14 @@ fun TimelineLayers(t: Timeline, plan: TimelinePlan?) {
     val paths = rememberGeoJsonSource(GeoJsonData.JsonString(pathsJson))
     LineLayer(id = "tl-paths", source = paths, color = feature["color"].convertToColor(), width = const(4.dp), cap = const(LineCap.Round), join = const(LineJoin.Round))
     val points = rememberGeoJsonSource(GeoJsonData.JsonString(pointsJson))
-    CircleLayer(id = "tl-points", source = points, color = const(Color(0xFF202124)), radius = const(12.dp), strokeColor = const(Color.White), strokeWidth = const(2.dp))
+    CircleLayer(id = "tl-points", source = points, color = const(com.mockroute.app.ui.theme.AppColors.Green), radius = const(12.dp), strokeColor = const(com.mockroute.app.ui.theme.AppColors.MapHalo), strokeWidth = const(2.dp))
     SymbolLayer(
         id = "tl-points-label",
         source = points,
         textField = format(span(feature["label"].asString())),
         textFont = const(listOf("Noto Sans Bold")),
         textSize = const(0.9.em),
-        textColor = const(Color.White),
+        textColor = const(com.mockroute.app.ui.theme.AppColors.OnVibrant),
         textAllowOverlap = const(true),
         textIgnorePlacement = const(true),
     )
@@ -133,7 +133,7 @@ fun TimelineContextLayers(t: Timeline, plan: TimelinePlan?, editing: Int) {
         }
         """{"type":"FeatureCollection","features":[${feats.joinToString(",")}]}"""
     }
-    val grey = Color(0xFF757575)
+    val grey = Color(0xFF6B7684)
     val heat = rememberGeoJsonSource(GeoJsonData.JsonString(heatJson))
     FillLayer(id = "ctx-heat", source = heat, color = feature["color"].convertToColor())
     val outlines = rememberGeoJsonSource(GeoJsonData.JsonString(outlinesJson))

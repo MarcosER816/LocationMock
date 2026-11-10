@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
@@ -47,10 +46,7 @@ fun ZoneSheet(
     val def = state.def
     var show3d by remember { mutableStateOf(false) }
     val streets = def.kind == ZoneKind.Streets
-    Card(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
-    ) {
+    MapPanel(accent = com.mockroute.app.ui.theme.AppColors.Purple) {
         Column(
             Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),

@@ -70,8 +70,11 @@ Builds run in GitHub Actions; the user installs the debug APK artifact.
 ## UI rules (user preferences, 2026-11-10)
 - Always dark theme with vibrant colours, one per kind of thing (Route blue, Trace cyan, Draw amber, Area purple,
   Trip green, errors pink). No dynamic colour, no light theme. Dark map by default.
-- Map (bundled `assets/map_dark.json`, built by `tools/make_map_style.py`): buildings lighter than the streets and
-  in 3-D, green areas dark green, water blue.
+- Map (bundled `assets/map_dark.json`, built by `tools/make_map_style.py` from OpenFreeMap liberty): show as many
+  buildings and details as possible (like Google Maps): buildings from z13, 3-D from z14, lighter than the streets;
+  POIs + house numbers; green areas dark green, water blue.
+- Map overlays and panels: use `MapPanel` / `MapControlStack` / `Tag` from `ui/Widgets.kt`; overlays use the app
+  palette with dark halos (never white casings).
 - Default speed & time of a route = the provider's values as given; the first plan takes exactly the provider's
   time, Shuffle samples around it.
 - Buttons are smooth squares (use the wrappers in `ui/Widgets.kt`; never Material's pill buttons).
