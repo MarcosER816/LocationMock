@@ -65,6 +65,15 @@ data class SegmentPlanSettings(
     companion object {
         private const val KMH = 1 / 3.6
 
+        /** Indoor zone defaults: slow walking (1.5–5 km/h, mean 3.5), 5–20 min (mean 10), a = 1.0, L = 30 m. */
+        fun zoneDefaults(): SegmentPlanSettings = SegmentPlanSettings(
+            speed = GammaSetting(1.5 * KMH, 5.0 * KMH, 3.5 * KMH, shape = 5.0),
+            time = GammaSetting(5 * 60.0, 20 * 60.0, 10 * 60.0, shape = 4.0),
+            aMaxMps2 = AccelerationPreset.Walking.aMps2,
+            accelPreset = AccelerationPreset.Walking,
+            correlationLengthM = 30.0,
+        )
+
         /** Sensible defaults for a fresh segment of [distanceM] metres. */
         fun defaults(profile: RoutingProfile, distanceM: Double): SegmentPlanSettings {
             val (vLo, vMean, vHi) = when (profile) {

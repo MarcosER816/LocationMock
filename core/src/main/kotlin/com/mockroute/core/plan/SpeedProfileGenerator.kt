@@ -62,7 +62,16 @@ object SpeedProfileGenerator {
          * copula's local median (z = 0) equals that speed: v_i = G⁻¹(Φ(z_i + δ + ζ_i)), with ζ_i = Φ⁻¹(G(m(s_i))).
          */
         val localMedian: ((Double) -> Double)? = null,
+        /**
+         * Stage 6: dwell stops (distance along the route, seconds). The speed is forced to 0 at the nearest node,
+         * and the hold is inserted as a duplicated node (same s, v = 0, +duration), so the total time includes it.
+         */
+        val stops: List<Stop> = emptyList(),
+        /** Stage 6: use this total time instead of sampling it from the time distribution (no d/v_min clamp). */
+        val targetTimeS: Double? = null,
     )
+
+    data class Stop(val atM: Double, val durationS: Double)
 
     fun defaultCorrelationLength(profile: RoutingProfile): Double = when (profile) {
         RoutingProfile.Walk -> 150.0
@@ -88,7 +97,7 @@ object SpeedProfileGenerator {
         val tPhys = Feasibility.tMinPhys(d, st.vMax, a)
         var tHigh = st.tMax
         if (st.vMin > 0) tHigh = min(tHigh, d / st.vMin)
-        val target = tSampled.coerceIn(min(tPhys, tHigh), max(tPhys, tHigh))
+        val target = req.targetTimeS ?: tSampled.coerceIn(min(tPhys, tHigh), max(tPhys, tHigh))
 
         // 2. Nodes + latent OU.
         val step = req.stepM ?: if (d <= 10_000) 5.0 else 10.0
@@ -123,13 +132,31 @@ object SpeedProfileGenerator {
             max(sqrt(max(0.0, v0 * v0 - 2 * a * sArr[i])), sqrt(max(0.0, vEnd * vEnd - 2 * a * (d - sArr[i]))))
         }
 
+        // Stops: node index → total dwell there. Merged when they land on the same or adjacent nodes (two
+        // consecutive zero-speed nodes would need infinite time to cross the gap between them).
+        // The start/end nodes are zero-speed nodes too when v0/v_end = 0, so stops next to them merge into them.
+        val dwellAt = java.util.TreeMap<Int, Double>()
+        val zeroNodes = java.util.TreeSet<Int>()
+        if (req.v0 <= 0.0) zeroNodes += 0
+        if (req.vEnd <= 0.0) zeroNodes += n
+        for (stop in req.stops) {
+            if (stop.durationS <= 0) continue
+            var idx = (stop.atM / ds).roundToIntCompat().coerceIn(0, n)
+            zeroNodes.floor(idx)?.let { k -> if (idx - k <= 1) idx = k }
+            zeroNodes.ceiling(idx)?.let { k -> if (k - idx <= 1) idx = k }
+            zeroNodes += idx
+            dwellAt[idx] = (dwellAt[idx] ?: 0.0) + stop.durationS
+        }
+        val dwellTotal = dwellAt.values.sum()
+
         val v = DoubleArray(n + 1)
         fun build(delta: Double): Double {
             for (i in 0..n) v[i] = min(max(min(table.speedAt(z[i] + delta + zShift[i]), cap[i]), envelope[i]), st.vMax)
             v[0] = v0
             v[n] = vEnd
+            for (i in dwellAt.keys) v[i] = 0.0
             accelLimit(v, ds, a)
-            var tau = 0.0
+            var tau = dwellTotal
             for (i in 0 until n) tau += 2 * ds / (v[i] + v[i + 1]).coerceAtLeast(1e-9)
             return tau
         }
@@ -166,13 +193,28 @@ object SpeedProfileGenerator {
             }
         }
         build(delta)
-        val tArr = DoubleArray(n + 1)
-        for (i in 0 until n) tArr[i + 1] = tArr[i] + 2 * ds / (v[i] + v[i + 1]).coerceAtLeast(1e-9)
+        // Time integration with the dwell holds inserted as duplicated nodes.
+        val outS = ArrayList<Double>(n + 1 + dwellAt.size)
+        val outT = ArrayList<Double>(n + 1 + dwellAt.size)
+        val outV = ArrayList<Double>(n + 1 + dwellAt.size)
+        var time = 0.0
+        for (i in 0..n) {
+            if (i > 0) time += 2 * ds / (v[i - 1] + v[i]).coerceAtLeast(1e-9)
+            outS += sArr[i]
+            outT += time
+            outV += v[i]
+            dwellAt[i]?.let { hold ->
+                time += hold
+                outS += sArr[i]
+                outT += time
+                outV += 0.0
+            }
+        }
 
         return SpeedPlan(
-            s = sArr,
-            t = tArr,
-            v = v.copyOf(),
+            s = outS.toDoubleArray(),
+            t = outT.toDoubleArray(),
+            v = outV.toDoubleArray(),
             targetTimeS = target,
             seed = req.seed,
             delta = delta,
@@ -180,6 +222,8 @@ object SpeedProfileGenerator {
             generationMs = (System.nanoTime() - started) / 1_000_000,
         )
     }
+
+    private fun Double.roundToIntCompat(): Int = kotlin.math.round(this).toInt()
 
     /** Forward pass from v[0] then backward pass to v[n]: |v_{i+1}² − v_i²| ≤ 2·a·Δs. In place. */
     internal fun accelLimit(v: DoubleArray, ds: Double, a: Double) {
