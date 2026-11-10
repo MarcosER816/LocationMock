@@ -3,7 +3,7 @@
 Tick a stage (`[x]`) only when its acceptance checks pass and CI is green. Details live in `CLAUDE.md`.
 
 - [x] **Stage 0 — Skeleton & CI.** Gradle multi-module (`:core` pure Kotlin, `:app` Compose), version catalog,
-  wrapper, stable debug keystore, GitHub Actions debug APK artifact, optional API-key secrets → BuildConfig, docs.
+  wrapper, stable debug keystore, GitHub Actions debug APK artifact, docs (API keys: device-only since 0.2.2).
 - [x] **Stage 1 — Map + mock service MVP.** _(CI green; phone test script passed on POCO F7 Ultra 2026-11-09)_ MapLibre + OpenFreeMap map showing the real location; manifest
   permissions; `MockLocationService` (foreground, test providers gps/network/fused, startup cleaner); start/stop from
   UI; mock a fixed point; "not selected as mock app" explanation + deep link; one-time disclaimer.

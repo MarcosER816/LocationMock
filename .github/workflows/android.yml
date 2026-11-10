@@ -16,12 +16,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      # Optional API keys → BuildConfig. Missing secrets become empty strings; the build never fails on them.
-      ORS_API_KEY: ${{ secrets.ORS_API_KEY }}
-      TOMTOM_API_KEY: ${{ secrets.TOMTOM_API_KEY }}
-      GRAPHHOPPER_API_KEY: ${{ secrets.GRAPHHOPPER_API_KEY }}
-      GOOGLE_ROUTES_API_KEY: ${{ secrets.GOOGLE_ROUTES_API_KEY }}
+    # No secrets: API keys live only on the phone (Settings → Routing), never in the APK or the repo.
     steps:
       - name: Checkout
         uses: actions/checkout@v6

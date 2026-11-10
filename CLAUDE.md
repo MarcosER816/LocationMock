@@ -32,8 +32,10 @@ Builds run in GitHub Actions; the user installs the debug APK artifact.
 - :app = Compose UI, MapLibre Compose, ViewModels, network clients, DataStore/Room, MockLocationService, setup wizard.
 - Interfaces: RoutingProvider (ORS default, GraphHopper alt), TrafficProvider (TomTom default, Google optional),
   RoadGraphProvider (Overpass), TileStyle (OpenFreeMap liberty + fallback).
-- API keys never committed: GitHub secrets / local.properties → BuildConfig, or pasted in app Settings (DataStore).
-  The app must work with no keys (walk mode, straight-line/hand-drawn routes).
+- API keys live ONLY on the device: pasted in app Settings (DataStore). Never committed, never in GitHub secrets,
+  never built into the APK (the repo is public and CI artifacts are downloadable). (Changed 2026-11-10 at the
+  user's request; previously GitHub secrets → BuildConfig.) The app must work with no keys (walk mode,
+  straight-line/hand-drawn routes).
 
 ## Mock-location rules (hard requirements)
 - Manifest: ACCESS_MOCK_LOCATION (tools:ignore="MockLocation,ProtectedPermissions"), ACCESS_FINE/COARSE_LOCATION,

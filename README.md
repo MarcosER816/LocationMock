@@ -45,11 +45,13 @@ Use the toolbar at the top of the map:
 - **Free draw**: same as Streets, but with straight lines (no snapping).
 Then **Play at constant speed** moves your mocked location along the route.
 
-## Optional API keys
-Routing/traffic providers can use keys stored as GitHub repository secrets
-(**Settings → Secrets and variables → Actions**): `ORS_API_KEY`, `TOMTOM_API_KEY`, `GRAPHHOPPER_API_KEY`,
-`GOOGLE_ROUTES_API_KEY`. All are optional; the build succeeds and the app works (walk mode, straight-line routes)
-without them. Keys can also be pasted into the app's Settings later.
+## Optional API keys (stored only on your phone)
+Street routing needs a free key, pasted in **MockRoute → Settings ⚙ → Routing** (saved as you type, kept only on
+the phone; never in this repository or the APK):
+- **OpenRouteService:** sign up at openrouteservice.org (HeiGIT) and copy your key. Use **Test routing** to check it.
+- **GraphHopper** (alternative): graphhopper.com → API key (free: 500 credits/day, non-commercial).
+
+Without a key, the app still works with straight-line routes.
 
 ## Developing
 - `./gradlew :core:test` — pure-Kotlin logic tests (no Android SDK needed).

@@ -1,7 +1,6 @@
 package com.mockroute.app.net
 
 import android.util.Log
-import com.mockroute.app.BuildConfig
 import com.mockroute.app.data.AppSettings
 import com.mockroute.core.geo.LatLon
 import com.mockroute.core.route.RouteResult
@@ -28,9 +27,11 @@ enum class RoutingChoice(val id: String, val label: String) {
  */
 class RoutingService(private val cache: RouteCache) {
 
-    /** Key from Settings (DataStore) wins; otherwise the one baked in at build time from GitHub secrets. */
-    fun orsKey(s: AppSettings): String = s.orsApiKey.trim().ifBlank { BuildConfig.ORS_API_KEY.trim() }
-    fun ghKey(s: AppSettings): String = s.graphHopperApiKey.trim().ifBlank { BuildConfig.GRAPHHOPPER_API_KEY.trim() }
+    /** Keys exist only on the device (Settings → DataStore). Trimmed: pasted keys often carry spaces/quotes. */
+    fun orsKey(s: AppSettings): String = cleanKey(s.orsApiKey)
+    fun ghKey(s: AppSettings): String = cleanKey(s.graphHopperApiKey)
+
+    private fun cleanKey(k: String) = k.trim().trim('"', '\'').trim()
 
     /** Everything that changes which router/key is used; when it changes, fallback routes are retried. */
     fun configSignature(s: AppSettings): String = "${s.routingProvider}|${orsKey(s).hashCode()}|${ghKey(s).hashCode()}"

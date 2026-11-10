@@ -32,6 +32,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -119,6 +121,23 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
     val shownA = dragPreview?.takeIf { it.first == Endpoint.A }?.second ?: editor.a
     val shownB = dragPreview?.takeIf { it.first == Endpoint.B }?.second ?: editor.b
 
+    val currentOnLoadFailed by rememberUpdatedState { _: String? ->
+        if (styleIndex < TileStyle.chain.lastIndex) styleIndex++
+    }
+    val currentOnClick by rememberUpdatedState { pos: Position, _: DpOffset ->
+        if (vm.editor.state.value.mode != EditMode.Explore) {
+            vm.editor.onMapTap(LatLon(pos.latitude, pos.longitude))
+            ClickResult.Consume
+        } else {
+            ClickResult.Pass
+        }
+    }
+    val currentOnLongClick by rememberUpdatedState { pos: Position, _: DpOffset ->
+        val p = LatLon(pos.latitude, pos.longitude)
+        if (vm.editor.state.value.mode != EditMode.Explore) vm.editor.onMapTap(p) else vm.select(p)
+        ClickResult.Consume
+    }
+
     Box(
         Modifier
             .fillMaxSize()
@@ -135,20 +154,12 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
             modifier = Modifier.fillMaxSize(),
             baseStyle = BaseStyle.Uri(TileStyle.chain[styleIndex]),
             cameraState = cameraState,
-            onMapLoadFailed = { if (styleIndex < TileStyle.chain.lastIndex) styleIndex++ },
-            onMapClick = { pos, _ ->
-                if (editing) {
-                    vm.editor.onMapTap(LatLon(pos.latitude, pos.longitude))
-                    ClickResult.Consume
-                } else {
-                    ClickResult.Pass
-                }
-            },
-            onMapLongClick = { pos, _ ->
-                val p = LatLon(pos.latitude, pos.longitude)
-                if (editing) vm.editor.onMapTap(p) else vm.select(p)
-                ClickResult.Consume
-            },
+            // MaplibreMap (0.14) remembers its callbacks from the FIRST composition and never updates them, so
+            // these lambdas must not capture composition-time values (e.g. the current mode): they forward to
+            // rememberUpdatedState holders that always point at the latest handler.
+            onMapLoadFailed = { reason -> currentOnLoadFailed(reason) },
+            onMapClick = { pos, offset -> currentOnClick(pos, offset) },
+            onMapLongClick = { pos, offset -> currentOnLongClick(pos, offset) },
         ) {
             // Route being edited (simplified for display).
             val editedResult = editor.result

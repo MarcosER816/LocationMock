@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-09 — Stage 2 (routing & tracing) — 0.2.1 fixes pending phone re-check. Stage 1 verified on device._
+_Last updated: 2026-11-10 — Stage 2 (routing & tracing) — 0.2.2 pending phone re-check. Stage 1 verified on device._
 
 ## Done
 ### Stage 2 — routing & tracing
@@ -88,9 +88,8 @@ optional API-key secrets → BuildConfig.
   network → offline.
 - **Fallback:** no key, an error, or offline → a straight line with a notice (route drawn grey). The app keeps
   working without keys.
-- **Keys:** a key saved in Settings (DataStore) wins. Otherwise the build-time `BuildConfig` key from the GitHub
-  secret is used (`ORS_API_KEY`, `GRAPHHOPPER_API_KEY`), which is baked into the debug APK (fine for a personal
-  sideloaded app).
+- **Keys:** device-only since 0.2.2. They are pasted in Settings → Routing (DataStore) and trimmed. They are not
+  in BuildConfig, GitHub secrets or the repo. The `ORS_API_KEY`… secrets are no longer read by CI.
 - **Cache** (`net/RouteCache`): `cacheDir/routes/<sha256>.json`, keyed by provider | profile | points rounded to
   1e-6°. 30-day TTL, max 500 files (oldest evicted). Only real (non-fallback) results are stored. Re-adding the
   same leg, undo/redo, or switching profile back costs no request.
@@ -210,7 +209,30 @@ list of `LatLon`.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
 - Verified 2026-11-09 in sandbox: `:core:test` 24/24 passed; `:app:lintDebug` 0 errors; `:app:assembleDebug` OK.
 
-## Re-check for 0.2.1 (do first)
+## 0.2.2 (2026-11-10)
+- **Phone round 2:** the A/B markers now follow the map (map-layer approach confirmed ✅).
+- **Bug: B couldn't be placed / no path unless Settings had been opened from A → B.** Cause: **MaplibreMap 0.14
+  remembers its `onMapClick`/`onMapLongClick`/`onMapLoadFailed` callbacks from the first composition**
+  (`remember(cameraState, styleState, styleComposition)`, not keyed on the lambdas). The map was created in Explore
+  mode, so the tap handler kept seeing "not editing" and passed taps through. Leaving for Settings and coming back
+  rebuilt the map with fresh lambdas. Fix: the map gets stable forwarding lambdas that call
+  `rememberUpdatedState` holders, and the handlers read the mode from `vm.editor.state.value` at call time. **Rule:
+  any callback passed to MaplibreMap must go through rememberUpdatedState.**
+- **API keys are device-only now (user request):** removed the BuildConfig key fields, the Gradle `apiKey()` and
+  the workflow `secrets.*` env. Keys come only from Settings (DataStore), trimmed of spaces/quotes. CLAUDE.md and
+  README updated. Settings shows "Saved on this phone: N chars, …abcd" or "No key". **The repo is public:** CI
+  artifacts from builds that had the `ORS_API_KEY` secret (runs ~#4–#6, 2026-11-09) contain the key in the APK.
+  The user should delete those runs/artifacts and regenerate the ORS key.
+
+### Re-check for 0.2.2 (do first)
+1. Settings → About shows **0.2.2 (build N, sha)**.
+2. Settings → Routing: paste the ORS key (if it isn't there) → **Test routing** says "OK — ors: …".
+3. Close MockRoute from Recents, reopen it, tap **A → B** right away (without visiting Settings) and tap the map:
+   **B appears and the street route is drawn.**
+4. Explore → Settings → back → A → B → tap the map: B and the route appear.
+5. Streets mode, right after opening the app: taps add legs.
+
+## Re-check for 0.2.1
 1. Settings → About shows **0.2.1 (build N, sha)**. N should match the latest green Actions run.
 2. Settings → Routing: **clear the ORS key field** (to test the built-in key). The status line says
    "Using key built-in (GitHub secret): N chars, …abcd". Tap **Test routing**: it should say "OK — ors: … route".

@@ -59,13 +59,13 @@ private fun RoutingSettings(vm: MainViewModel) {
     KeyField(
         label = "OpenRouteService API key (optional)",
         initial = s.orsApiKey,
-        status = vm.keySource(s.orsApiKey, BuildConfig.ORS_API_KEY),
+        status = vm.keyStatus(s.orsApiKey),
         onChange = vm::setOrsKey,
     )
     KeyField(
         label = "GraphHopper API key (optional)",
         initial = s.graphHopperApiKey,
-        status = vm.keySource(s.graphHopperApiKey, BuildConfig.GRAPHHOPPER_API_KEY),
+        status = vm.keyStatus(s.graphHopperApiKey),
         onChange = vm::setGraphHopperKey,
     )
     val test by vm.routingTest.collectAsStateWithLifecycle()
@@ -75,14 +75,14 @@ private fun RoutingSettings(vm: MainViewModel) {
     }
     Text(
         "OpenRouteService (HeiGIT, api.heigit.org): free key at openrouteservice.org — ~2,000 directions/day, " +
-            "40/min. GraphHopper free: 500 credits/day, non-commercial. Without a key MockRoute draws straight lines. " +
+            "40/min. GraphHopper free: 500 credits/day, non-commercial. Keys are stored only on this phone. Without a key MockRoute draws straight lines. " +
             "Routes are cached on the phone for 30 days.",
         style = MaterialTheme.typography.bodySmall,
     )
     OutlinedButton(onClick = vm::clearRouteCache) { Text("Clear route cache (${vm.routeCache.entryCount()})") }
 }
 
-/** Saved as you type (no Save button to forget); an empty field means "use the built-in key". */
+/** Saved on the phone as you type (no Save button to forget). Keys never leave the device except to the provider. */
 @Composable
 private fun KeyField(label: String, initial: String, status: String, onChange: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf(initial) }

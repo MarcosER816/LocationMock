@@ -1,30 +1,10 @@
-import java.util.Properties
-
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
 }
 
-// Optional API keys: environment variable (GitHub Actions secrets) → local.properties → empty string.
-// A missing key must never fail the build; the app works without keys (walk mode, straight-line routes).
-val localProps = Properties().apply {
-    val f = rootProject.file("local.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
-}
-
-fun apiKey(name: String): String {
-    val raw = System.getenv(name)?.takeIf { it.isNotBlank() }
-        ?: localProps.getProperty(name)?.takeIf { it.isNotBlank() }
-        ?: ""
-    // Keys pasted on a phone often carry a trailing space/newline or quotes: strip them.
-    val value = raw.trim().trim('"', '\'').trim()
-    // Diagnostics without revealing the key: presence, length, whether cleanup changed anything.
-    logger.lifecycle(
-        "API key $name: " + if (value.isEmpty()) "absent" else "present, ${value.length} chars" +
-            (if (value != raw) " (removed surrounding whitespace/quotes)" else ""),
-    )
-    return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
-}
+// API keys are NOT built into the APK: they are entered on the phone (Settings → Routing) and stored in
+// DataStore only. The app works without any key (straight-line routes).
 
 // Build identity shown in Settings, so the installed APK can be matched to a CI run.
 val gitSha: String = (System.getenv("GITHUB_SHA") ?: "local").take(7)
@@ -38,16 +18,12 @@ android {
         applicationId = "com.mockroute.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.2.1"
+        versionCode = 5
+        versionName = "0.2.2"
 
         // Target phone (POCO F7 Ultra) is arm64; skipping other ABIs cuts the APK from ~75 MB to ~25 MB.
         ndk { abiFilters += listOf("arm64-v8a") }
 
-        buildConfigField("String", "ORS_API_KEY", apiKey("ORS_API_KEY"))
-        buildConfigField("String", "TOMTOM_API_KEY", apiKey("TOMTOM_API_KEY"))
-        buildConfigField("String", "GRAPHHOPPER_API_KEY", apiKey("GRAPHHOPPER_API_KEY"))
-        buildConfigField("String", "GOOGLE_ROUTES_API_KEY", apiKey("GOOGLE_ROUTES_API_KEY"))
         buildConfigField("String", "GIT_SHA", "\"$gitSha\"")
         buildConfigField("String", "CI_RUN", "\"$ciRun\"")
     }

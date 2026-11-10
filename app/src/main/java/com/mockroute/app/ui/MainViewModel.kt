@@ -105,10 +105,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun keySource(saved: String, builtIn: String): String {
-        val k = saved.trim().ifBlank { builtIn.trim() }
-        val src = if (saved.isNotBlank()) "saved on phone" else if (builtIn.isNotBlank()) "built-in (GitHub secret)" else "none"
-        return if (k.isEmpty()) "No key" else "Using key $src: ${k.length} chars, …${k.takeLast(4)}"
+    fun keyStatus(saved: String): String {
+        val k = saved.trim().trim('"', '\'').trim()
+        return if (k.isEmpty()) "No key: straight-line routes" else "Saved on this phone: ${k.length} chars, …${k.takeLast(4)}"
     }
 
     fun clearRouteCache() = viewModelScope.launch {
