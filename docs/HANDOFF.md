@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — 0.5.1 (path-matching fallback) pending phone re-test. Stages 1–4 verified on device._
+_Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — 0.5.1 verified on device (corridor match). Stages 1–4 verified on device._
 
 ## Done
 ### Stage 5 — traffic-aware Car/Bus (0.5.0)
@@ -175,8 +175,10 @@ optional API-key secrets → BuildConfig.
 - **Quota:** a failed attempt also costs a request, so the worst case for the first bin is 3, and later bins use
   the method that worked. The 12-per-plan budget can then be exceeded by ≤ 2. Shown in the sheet: "… · exact path
   / approximate path (corridor) / A→B only", plus a note when it isn't exact.
-- **Still unverified:** whether `reconstructionMode=track` alone fixes it (no key in the sandbox). Report which
-  label the sheet shows.
+- **Phone result 2026-11-10:** works. Exact (track) still failed; **Corridor succeeded**. The sheet showed
+  "5 request(s), 0 from cache · approximate path (corridor) · 3 congestion point(s) marked". The 5 requests are
+  1 failed exact attempt + 4 bins. Possible optimisation: if exact keeps failing on ORS-traced routes, try
+  Corridor first (saves 1 request per fresh analysis).
 
 ## Stage 5: traffic endpoints, params, quota, inaccuracies
 **TomTom Routing API v1** (docs.tomtom.com/routing-api, checked 2026-11-10):
