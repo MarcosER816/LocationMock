@@ -1,8 +1,31 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 7 (street zone) — 0.7.0 built, CI; awaiting phone test. Stages 1–6 verified on device._
+_Last updated: 2026-11-10 — Stage 8 (timeline) — 0.8.0 built, CI; awaiting phone test. Stages 1–7 verified on device._
 
 ## Done
+### Stage 8 — TIMELINE (0.8.0)
+- **⏱ button** (top right of the map) → Timeline screen:
+  - The **start (first A)** card: real location (captured before mocking) or custom; **Use my location** / **Move
+    on map**.
+  - **Segment cards:** icon, title, distance, duration and clock times "10:05 → 10:21". Planning errors and
+    warnings are shown. Issues come with fixes (**Snap to edge** / **Insert connector route**). Card actions:
+    Edit, Re-roll, Play from here, Delete, ↑/↓. **Long-press and drag** to reorder (re-linked and re-validated).
+  - **+ Route / + Indoor / + Street / + Pause.**
+  - **Plan all** (progress bar), **Re-roll all**, **Play**, **Show on map**.
+  - **Files:** Save as…, Load (list + delete), New, **Export JSON** / **Export GPX** (share sheet via
+    FileProvider `${applicationId}.files`, `files/exports/`), **Import** (SAF picker).
+- **Edit** opens the segment in the existing map editors (A→B / Streets / Free, or the Zone editor including the
+  Indoor ↔ Streets kind) with a banner "Editing timeline segment k — Cancel / Done". The standalone editor state is
+  snapshotted and restored afterwards. **Done** writes the segment back through `Timeline.replace()`, so a moved
+  A/B moves the shared point and the neighbour follows. Pauses are edited in a dialog (shortest/typical/longest
+  minutes).
+- **Map timeline view:** all segment paths (planned, or straight while unplanned) and zone outlines in per-segment
+  colours, plus **numbered shared points 0…n**. Drag a point to move it (both neighbours follow); a tap explains
+  this.
+- **Playback:** one service run (`TrajectorySpec.Timeline`) on the global clock. The notification title is
+  "<name> · 2/4 · Indoor zone" with a progress bar, % and time left, plus a **Skip** action (also on the status
+  card). "Play from here" starts the clock at that segment.
+
 ### Stage 7 — STREET zone (0.7.0)
 - **Toolbar "Zone"** (renamed from "Indoor") → a kind chip **Indoor | Streets**, plus a Walk / Car / Bus profile
   for Streets. Switching kind or profile resets the zone's speed & time to that kind's defaults
@@ -255,6 +278,62 @@ optional API-key secrets → BuildConfig.
 
 - **Phone result 2026-11-10 (0.6.1):** shape closes; "everything seems fine". The fps figure of the 3D preview
   wasn't reported; ask for it if performance comes up.
+
+## Stage 8: data model, file format, migrations
+**Model (`:core` package `timeline`):**
+- `Timeline(name, anchor, anchorIsRealLocation, segments, seedBase)`, immutable.
+- **Invariant:** `segments[0].start == anchor` and `segments[i].end == segments[i+1].start` (`chainOk()`). It holds
+  after every operation: `add`, `insert`, `remove`, `move`, `replace`, `setBoundary(k, p)`, `setAnchor`,
+  `snapToEdge`, `insertConnector`. Each re-links via `normalized()` (start := previous end).
+- `setBoundary` moves the shared point of both neighbours. A `Pause` is a single point, so a run of pauses moves
+  as a block.
+- `Segment` is a sealed class with JSON discriminator `"type"`:
+  - `Route` (`"route"`): start, end, profile, `RouteMode` PointToPoint | Streets | FreeDraw, waypoints, cached
+    geometry/geometryFor, settings?, seedOffset.
+  - `IndoorZone` (`"indoor"`) and `StreetZone` (`"street"`): start, end, `ZoneDefinition` (entry/exit kept equal
+    to start/end), settings?, seedOffset.
+  - `Pause` (`"pause"`): at, duration `GammaSetting` (default 1–5 min, mean 2).
+- **Validation:** `issues()` returns `RouteIncomplete`, `ZoneIncomplete`, `NotOnEdge` (indoor A/B > 0.5 m from
+  the edge) and `NotInside` (street A/B outside). Fixes: `snapToEdge(issue)`, or `insertConnector(issue, id)` (a
+  FreeDraw route between the outside point and the edge).
+
+**Planning (`TimelinePlanner.plan(t, startEpochS, sources)`):**
+- Plans in order; segment i starts at Σ previous durations (that's the Stage 5 departure time).
+- `seedFor = f(seedBase, id, seedOffset)`: Re-roll all changes `seedBase`; a card's Re-roll changes `seedOffset`.
+- **Boundary speeds** (`boundarySpeed`): 0 at the ends, at pauses and at indoor entry/exit. Between two moving
+  segments (route / street zone) it is 0.6·min(the two speed means), ≤ both v_max. Passed as v0/vEnd.
+- Routes are padded so they start/end **exactly** at the shared points (routed paths start on the snapped road).
+  Street zones use `StreetPlanner(connectEndpoints = true, v0, vEnd)`.
+- `TimelineSources` (app): ORS/GraphHopper routing via `RoutingService` (cached), Overpass roads (cache, or 1
+  fetch), and TomTom traffic as the local median for car/bus routes when a key exists.
+- `TimelinePlan.isStaleFor(t)`: any segment edited since planning makes it stale; Play then refuses with "Plan
+  all again".
+- `TimelineTrajectory(parts)`: global clock with binary search, `startOf(k)`, `nextStart(t)` (Skip),
+  `labelAt(t)`. `HoldTrajectory` for pauses.
+
+**File format:** `TimelineFile {"format": "mockroute-timeline", "version": 1, "timeline": {...}}`, pretty-printed
+JSON with defaults encoded.
+- `TimelineCodec.decode` rejects other formats, a missing version, and **newer versions** ("update the app").
+  Older versions run through `MIGRATIONS[v]` (raw JSON v → v+1).
+- **Version history:** v1 = Stage 8 (2026-11-10). **No migrations yet.**
+- Saved files: `filesDir/timelines/<name>.json`; the current timeline autosaves to `.current.json` (debounced
+  500 ms). **GPX:** 1.1 track, 1 Hz `trkpt` with `ele` and an ISO-8601 `time` from the planned start.
+
+**Tests (`TimelineTest`):**
+- 1,000 random edit sequences (5–25 ops each) with `chainOk()` after every op, and zone entry/exit synced.
+- Pause runs and the anchor.
+- Snap/connector fixes.
+- Codec round trip plus version/format errors.
+- **Route → Indoor → Route → Street → Pause** over 20 seeds: every segment starts exactly at its shared point at
+  the previous end time, **no 1 Hz step > v_max·Δt + 0.4 m**, boundary speeds equal on both sides.
+- GPX, seeds.
+
+**Limitations:**
+- Editing a segment reuses the standalone editors (one at a time).
+- Departure for traffic = "now + 1 min" at Plan all; a later Play doesn't re-plan.
+- The route geometry cache fields in `Segment.Route` aren't written back yet: routing is re-requested and served
+  from the ORS cache.
+- Street zones in timelines need their roads cached or fetchable (counts against the Overpass cap).
 
 ## Stage 7: Overpass query, cache policy, graph, perf
 **Query** (one per zone; the union of walk and car classes, so Walk/Car/Bus switches need no new request):
@@ -607,9 +686,24 @@ list of `LatLon`.
 - The tall segment sheet covers part of the map on small screens.
 
 ## Next steps
-- Run the Stage 7 phone test script below.
-- Stage 8: timeline (chain segments; B(i) = A(i+1); first A = the real location; pass each plan's end speed on as
-  the next `v0`).
+- Run the Stage 8 phone test script below.
+- Stage 9: GPS noise (Gauss–Markov error, environment-dependent accuracy, multipath jumps).
+
+## How to verify on phone (Stage 8 test script)
+1. Install 0.8.0. Map → **⏱**. The start card says "Your real location".
+2. **+ Route** → Edit: on the map set B about 300 m away (A→B) → **Done**. You're back on the timeline; the card
+   shows the straight-line distance.
+3. **+ Indoor** → Edit: draw a small building whose wall is at that B. Entry A is already at the shared point; if
+   it isn't on the wall the card says so: **Snap to edge** or **Insert connector route**. Place exit B → Done.
+4. **+ Route** → Edit B about 300 m away → Done. **+ Street** → Edit: draw a neighbourhood around that point
+   (roads load) and set B → Done.
+5. **Plan all**: progress, then each card shows distance, duration and "10:05 → 10:21".
+6. **Show on map**: coloured paths, zone outlines, numbered points. Drag point 2: both neighbouring segments move;
+   back on the timeline it says "Changed since planning" → Plan all.
+7. **Play**: one continuous run in Google Maps. The notification shows "Timeline · 2/4 · Indoor zone", progress
+   and **Skip**. Skip jumps to the next segment.
+8. Long-press-drag a card to reorder: the chain re-links (re-plan). **Save as…** → **Load**. **Export JSON** /
+   **Export GPX** open the share sheet. **Import** the JSON back.
 
 ## How to verify on phone (Stage 7 test script)
 1. Install 0.7.0. Toolbar → **Zone** → chip **Streets**, profile **Walk**.
@@ -684,7 +778,7 @@ list of `LatLon`.
   `platforms;android-36` + `build-tools;36.0.0` with sdkmanager and point `sdk.dir` in `local.properties` at it.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
-- Verified 2026-11-10 in sandbox: `:core:test` 86/86 passed (Stage 7: Overpass parse/query, mode filters, polygon clipping, oneway, SCC, snapping, 150 walk + 150 car plans on/inside/on-time/accel/oneway/turn caps, dominant vs uniform, 30×30 perf); before: 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
+- Verified 2026-11-10 in sandbox: `:core:test` 93/93 passed (Stage 8: 1,000 random edit sequences, pause runs, fixes, codec/versioning, Route→Indoor→Route→Street→Pause continuity ×20 seeds, GPX, seeds); before: 86/86 passed (Stage 7: Overpass parse/query, mode filters, polygon clipping, oneway, SCC, snapping, 150 walk + 150 car plans on/inside/on-time/accel/oneway/turn caps, dominant vs uniform, 30×30 perf); before: 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
 
 ## 0.2.2 (2026-11-10)
 - **Phone round 2:** the A/B markers now follow the map (map-layer approach confirmed ✅).

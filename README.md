@@ -51,6 +51,12 @@ red = fast. A label shows the total time. Tap the line to see the speed and ETA 
 generates a different plan; **Lock time** keeps the duration fixed. **Play plan** moves your mocked location along
 the route with that speed profile.
 
+## Timeline (Stage 8)
+Tap **⏱** on the map to chain segments: **+ Route / + Indoor / + Street / + Pause**. Each segment starts where
+the previous one ends (move a shared point and both neighbours follow); the first one starts at your real
+location. **Plan all**, then **Play** runs the whole day in one go; the notification shows the current segment,
+and **Skip** jumps ahead. Save, load, import/export timelines (JSON) and export the planned track as GPX.
+
 ## Street zone (Stage 7)
 Toolbar → **Zone** → **Streets** (Walk / Car / Bus): draw a neighbourhood. The app loads its streets from
 OpenStreetMap once (cached 30 days; **Refresh roads** to update), and you wander only along real streets inside
