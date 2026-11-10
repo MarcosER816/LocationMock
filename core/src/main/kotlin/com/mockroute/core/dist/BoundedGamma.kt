@@ -35,6 +35,9 @@ class BoundedGamma private constructor(
     /** Mean of the truncated distribution (closed form via regularized incomplete gamma). */
     val mean: Double = if (isPointMass) lo else lo + truncatedMeanY(shape, scale, width)
 
+    /** Variance of the truncated distribution: E[Y²|Y≤W] − E[Y|Y≤W]², E[Y²|…] = k(k+1)θ²·P(k+2, x)/P(k, x). */
+    val variance: Double = if (isPointMass) 0.0 else truncatedVarianceY(shape, scale, width, mean - lo)
+
     /** Mode of the truncated distribution. */
     val mode: Double = when {
         isPointMass -> lo
@@ -143,6 +146,37 @@ class BoundedGamma private constructor(
                 if (logHi - logLo < 1e-12) return@repeat
             }
             return BoundedGamma(lo, hi, shape, exp(0.5 * (logLo + logHi)))
+        }
+
+        /**
+         * Bounded gamma on [lo, hi] whose TRUNCATED mean is [mean] and truncated variance ≈ [variance]: for each
+         * shape k the scale comes from [withMean], and k is bisected (on log k, variance decreasing in k) within
+         * [MIN_SHAPE, MAX_SHAPE]. Out-of-range variances clamp to the nearest shape bound.
+         */
+        fun withMeanVariance(lo: Double, hi: Double, mean: Double, variance: Double): BoundedGamma {
+            if (hi <= lo) return pointMass(lo)
+            var a = kotlin.math.ln(MIN_SHAPE)
+            var b = kotlin.math.ln(MAX_SHAPE)
+            val wide = withMean(lo, hi, MIN_SHAPE, mean)
+            if (variance >= wide.variance) return wide
+            val narrow = withMean(lo, hi, MAX_SHAPE, mean)
+            if (variance <= narrow.variance) return narrow
+            repeat(60) {
+                val m = 0.5 * (a + b)
+                if (withMean(lo, hi, exp(m), mean).variance > variance) a = m else b = m
+            }
+            return withMean(lo, hi, exp(0.5 * (a + b)), mean)
+        }
+
+        internal fun truncatedVarianceY(k: Double, theta: Double, w: Double, meanY: Double): Double {
+            val x = w / theta
+            val pk = Gamma.regularizedGammaP(k, x)
+            val m2 = if (pk < 1e-280 || !pk.isFinite()) {
+                w * w * k / (k + 2.0) // θ → ∞ limit: density ∝ y^(k−1) on [0, W]
+            } else {
+                k * (k + 1.0) * theta * theta * Gamma.regularizedGammaP(k + 2.0, x) / pk
+            }
+            return (m2 - meanY * meanY).coerceAtLeast(0.0)
         }
 
         /** Untruncated mode (k − 1)θ placed at [mode] (needs k > 1; for k ≤ 1 the mode is always lo). */

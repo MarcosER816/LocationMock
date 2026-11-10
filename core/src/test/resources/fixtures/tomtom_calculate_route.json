@@ -1,0 +1,45 @@
+{
+  "formatVersion": "0.0.12",
+  "routes": [
+    {
+      "summary": {
+        "lengthInMeters": 3000,
+        "travelTimeInSeconds": 420,
+        "trafficDelayInSeconds": 95,
+        "trafficLengthInMeters": 600,
+        "departureTime": "2026-11-11T08:00:00+01:00",
+        "arrivalTime": "2026-11-11T08:07:00+01:00",
+        "noTrafficTravelTimeInSeconds": 300,
+        "historicTrafficTravelTimeInSeconds": 420,
+        "liveTrafficIncidentsTravelTimeInSeconds": 450
+      },
+      "legs": [
+        {
+          "summary": { "lengthInMeters": 3000, "travelTimeInSeconds": 420 },
+          "points": [
+            { "latitude": 52.50000, "longitude": 13.40000 },
+            { "latitude": 52.50000, "longitude": 13.41477 },
+            { "latitude": 52.50000, "longitude": 13.42954 },
+            { "latitude": 52.50000, "longitude": 13.44431 }
+          ]
+        }
+      ],
+      "sections": [
+        { "startPointIndex": 0, "endPointIndex": 3, "sectionType": "TRAVEL_MODE", "travelMode": "car" },
+        {
+          "startPointIndex": 1, "endPointIndex": 2, "sectionType": "TRAFFIC", "simpleCategory": "JAM",
+          "effectiveSpeedInKmh": 18, "delayInSeconds": 95, "magnitudeOfDelay": 2,
+          "tec": { "effectCode": 4, "causes": [{ "mainCauseCode": 1 }] }
+        }
+      ],
+      "guidance": {
+        "instructions": [
+          { "routeOffsetInMeters": 0, "travelTimeInSeconds": 0, "pointIndex": 0, "maneuver": "DEPART" },
+          { "routeOffsetInMeters": 1000, "travelTimeInSeconds": 90, "pointIndex": 1, "maneuver": "STRAIGHT" },
+          { "routeOffsetInMeters": 2000, "travelTimeInSeconds": 290, "pointIndex": 2, "maneuver": "TURN_LEFT" },
+          { "routeOffsetInMeters": 3000, "travelTimeInSeconds": 420, "pointIndex": 3, "maneuver": "ARRIVE" }
+        ]
+      }
+    }
+  ]
+}

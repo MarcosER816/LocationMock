@@ -57,6 +57,11 @@ object SpeedProfileGenerator {
         val curvatureCap: Boolean = profile != RoutingProfile.Walk,
         /** Node spacing; null = 5 m (≤ 10 km) or 10 m. */
         val stepM: Double? = null,
+        /**
+         * Stage 5: predicted speed at distance s (m/s). When set, node i's latent value is shifted so that the
+         * copula's local median (z = 0) equals that speed: v_i = G⁻¹(Φ(z_i + δ + ζ_i)), with ζ_i = Φ⁻¹(G(m(s_i))).
+         */
+        val localMedian: ((Double) -> Double)? = null,
     )
 
     fun defaultCorrelationLength(profile: RoutingProfile): Double = when (profile) {
@@ -101,6 +106,9 @@ object SpeedProfileGenerator {
         // 3. Speed table v(z) = G⁻¹(Φ(z)) for the distance-weighted marginal, clipped.
         val table = SpeedTable.build(st.speed.distribution(), vFloor, st.vMax)
 
+        val zShift = DoubleArray(n + 1)
+        req.localMedian?.let { m -> for (i in 0..n) zShift[i] = table.zFor(m(sArr[i])) }
+
         // 4. Static caps (curvature) independent of δ.
         val cap = DoubleArray(n + 1) { st.vMax }
         if (req.curvatureCap) {
@@ -117,7 +125,7 @@ object SpeedProfileGenerator {
 
         val v = DoubleArray(n + 1)
         fun build(delta: Double): Double {
-            for (i in 0..n) v[i] = min(max(min(table.speedAt(z[i] + delta), cap[i]), envelope[i]), st.vMax)
+            for (i in 0..n) v[i] = min(max(min(table.speedAt(z[i] + delta + zShift[i]), cap[i]), envelope[i]), st.vMax)
             v[0] = v0
             v[n] = vEnd
             accelLimit(v, ds, a)
@@ -231,6 +239,22 @@ internal class SpeedTable private constructor(private val zMin: Double, private 
         val i = x.toInt()
         val f = x - i
         return values[i] + f * (values[i + 1] - values[i])
+    }
+
+    /** Inverse of [speedAt]: the z where the (non-decreasing) table reaches [v]; clamped to the table range. */
+    fun zFor(v: Double): Double {
+        if (v <= values[0]) return zMin
+        val last = values.size - 1
+        if (v >= values[last]) return zMin + last * dz
+        var lo = 0
+        var hi = last
+        while (hi - lo > 1) {
+            val mid = (lo + hi) ushr 1
+            if (values[mid] < v) lo = mid else hi = mid
+        }
+        val span = values[hi] - values[lo]
+        val f = if (span > 0) (v - values[lo]) / span else 0.0
+        return zMin + (lo + f) * dz
     }
 
     companion object {

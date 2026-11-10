@@ -45,6 +45,8 @@ data class SegmentPlanSettings(
     val accelPreset: AccelerationPreset? = null,
     /** Stage 4: correlation length of speed variations (m); null = profile default (150 walk / 400 car, bus). */
     val correlationLengthM: Double? = null,
+    /** Stage 5: true while these values come from a traffic analysis ("auto, from traffic"); edits clear it. */
+    val autoFromTraffic: Boolean = false,
 ) {
     val vMin: Double get() = speed.lo
     val vMax: Double get() = speed.hi
