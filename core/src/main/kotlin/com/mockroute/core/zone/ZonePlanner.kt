@@ -39,6 +39,8 @@ class ZonePlan(
     val warning: String?,
     /** Shortest inside path A→B (m): the feasibility distance. */
     val shortestPathM: Double,
+    /** Reported horizontal accuracy (indoor 12 m, streets 5 m; Stage 9 models it properly). */
+    val accuracyM: Double = INDOOR_ACCURACY_M,
 ) : Trajectory {
     private val cum = DoubleArray(path.size).also { for (i in 1 until path.size) it[i] = it[i - 1] + path[i - 1].distanceTo(path[i]) }
     val lengthM: Double get() = cum.last()
@@ -96,7 +98,7 @@ class ZonePlan(
         val ll = frame.toLatLon(p)
         val bearing = ((Math.toDegrees(atan2(dir.x, dir.y)) % 360) + 360) % 360
         val speed = if (tSeconds >= durationSeconds) 0.0 else plan.stateAtTime(tSeconds).speedMps
-        return KinematicState(ll.lat, ll.lon, Trajectory.DEFAULT_ALTITUDE_M, speed, bearing, INDOOR_ACCURACY_M)
+        return KinematicState(ll.lat, ll.lon, Trajectory.DEFAULT_ALTITUDE_M, speed, bearing, accuracyM)
     }
 
     companion object {

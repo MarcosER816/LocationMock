@@ -69,6 +69,8 @@ object SpeedProfileGenerator {
         val stops: List<Stop> = emptyList(),
         /** Stage 6: use this total time instead of sampling it from the time distribution (no d/v_min clamp). */
         val targetTimeS: Double? = null,
+        /** Stage 7: extra per-position speed cap (m/s) at distance s, e.g. maxspeed or sharp turns. */
+        val speedCap: ((Double) -> Double)? = null,
     )
 
     data class Stop(val atM: Double, val durationS: Double)
@@ -123,6 +125,7 @@ object SpeedProfileGenerator {
         if (req.curvatureCap) {
             for (i in 0..n) cap[i] = min(cap[i], curvatureSpeedCap(geometry, sArr[i]))
         }
+        req.speedCap?.let { f -> for (i in 0..n) cap[i] = min(cap[i], f(sArr[i]).coerceAtLeast(MIN_SPEED_MPS)) }
 
         // Boundary envelope: with a non-zero v0 (or v_end) the nodes near the ends must be fast enough to brake from
         // (or accelerate to) it at a_max, otherwise the accel passes would have to violate the boundary speed.

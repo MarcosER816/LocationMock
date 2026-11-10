@@ -3,6 +3,10 @@ package com.mockroute.core.zone
 import com.mockroute.core.geo.LatLon
 import kotlinx.serialization.Serializable
 
+/** Indoor (free wandering inside the polygon) or Streets (only on the road graph inside it). */
+@Serializable
+enum class ZoneKind { Indoor, Streets }
+
 /** How waypoints are chosen. */
 @Serializable
 enum class WanderMode {
@@ -35,6 +39,11 @@ data class ZoneDefinition(
     val dwellMeanS: Double = 30.0,
     val wobble: Boolean = true,
     val mode: WanderMode = WanderMode.Waypoints,
+    /** Stage 7. */
+    val kind: ZoneKind = ZoneKind.Indoor,
+    val profile: com.mockroute.core.route.RoutingProfile = com.mockroute.core.route.RoutingProfile.Walk,
+    /** Polygon the cached Overpass roads were fetched for (its query key is derived from it). */
+    val roadsPolygon: List<LatLon> = emptyList(),
 ) {
     /** Local frame anchored at the first vertex. */
     fun frame(): LocalFrame? = vertices.firstOrNull()?.let { LocalFrame(it) }

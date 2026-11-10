@@ -74,6 +74,22 @@ data class SegmentPlanSettings(
             correlationLengthM = 30.0,
         )
 
+        /** Street-zone defaults per profile (wandering a neighbourhood). */
+        fun streetDefaults(profile: RoutingProfile): SegmentPlanSettings {
+            val (v, t) = when (profile) {
+                RoutingProfile.Walk -> Triple(3.0, 5.0, 6.5) to Triple(15.0, 25.0, 45.0)
+                RoutingProfile.Car -> Triple(10.0, 25.0, 50.0) to Triple(10.0, 20.0, 35.0)
+                RoutingProfile.Bus -> Triple(5.0, 18.0, 40.0) to Triple(15.0, 25.0, 40.0)
+            }
+            val preset = AccelerationPreset.defaultFor(profile)
+            return SegmentPlanSettings(
+                speed = GammaSetting(v.first * KMH, v.third * KMH, v.second * KMH, shape = 5.0),
+                time = GammaSetting(t.first * 60, t.third * 60, t.second * 60, shape = 4.0),
+                aMaxMps2 = preset.aMps2,
+                accelPreset = preset,
+            )
+        }
+
         /** Sensible defaults for a fresh segment of [distanceM] metres. */
         fun defaults(profile: RoutingProfile, distanceM: Double): SegmentPlanSettings {
             val (vLo, vMean, vHi) = when (profile) {
