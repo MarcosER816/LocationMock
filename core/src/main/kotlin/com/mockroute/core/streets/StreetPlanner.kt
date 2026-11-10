@@ -65,6 +65,11 @@ object StreetPlanner {
         val dwellMeanS: Double = 30.0,
         val mode: WanderMode = WanderMode.Waypoints,
         val beta: Double = 1.5,
+        /** Stage 8: speed at A / B (timeline boundary continuity). */
+        val v0: Double = 0.0,
+        val vEnd: Double = 0.0,
+        /** Stage 8: start/end exactly at [a]/[b] with short connectors to the road (timeline boundaries must match). */
+        val connectEndpoints: Boolean = false,
     )
 
     /** Shortest A→B on the graph (feasibility distance). */
@@ -126,8 +131,8 @@ object StreetPlanner {
         val zone = ZonePlan(
             polygon = req.polygon,
             frame = req.frame,
-            a = g.nodes[na],
-            b = g.nodes[nb],
+            a = if (req.connectEndpoints) req.a else g.nodes[na],
+            b = if (req.connectEndpoints) req.b else g.nodes[nb],
             path = path,
             plan = plan,
             targetTimeS = finalTarget,
@@ -238,8 +243,9 @@ object StreetPlanner {
         }
         append(g.shortestPath(cur, nb))
 
-        // Polyline (local) from the edge sequence.
+        // Polyline (local) from the edge sequence (optionally starting exactly at the raw A).
         val path = ArrayList<Vec2>()
+        if (req.connectEndpoints && req.a.distanceTo(g.nodes[na]) > 0.05) path += req.a
         path += g.nodes[na]
         val edgeStart = DoubleArray(edgePath.size)
         var s = 0.0
@@ -251,7 +257,10 @@ object StreetPlanner {
             }
             s += g.edges[ei].lengthM
         }
+        if (req.connectEndpoints && req.b.distanceTo(path.last()) > 0.05) path += req.b
         if (path.size < 2) path += g.nodes[nb] + Vec2(1e-3, 0.0)
+        val connectorStart = if (req.connectEndpoints) req.a.distanceTo(g.nodes[na]).takeIf { it > 0.05 } ?: 0.0 else 0.0
+        for (k in edgeStart.indices) edgeStart[k] += connectorStart
 
         // Speed caps (car/bus): maxspeed per edge, ≤ 15 km/h within ±8 m of a turn > 60°.
         val turns = if (walk) emptyList() else turnPoints(path)
@@ -271,10 +280,12 @@ object StreetPlanner {
                 geometry, st, req.profile, req.seed,
                 curvatureCap = false,
                 stepM = if (geometry.lengthM < 10_000) 5.0 else 10.0,
-                stops = stopsLocal.map { SpeedProfileGenerator.Stop(it.first * toGeo, it.second) } +
+                stops = stopsLocal.map { SpeedProfileGenerator.Stop((it.first + connectorStart) * toGeo, it.second) } +
                     if (extraEnd > 0) listOf(SpeedProfileGenerator.Stop(geometry.lengthM, extraEnd)) else emptyList(),
                 targetTimeS = tgt,
                 speedCap = cap,
+                v0 = req.v0,
+                vEnd = req.vEnd,
             ),
         )
         var plan = generate(0.0, target)
