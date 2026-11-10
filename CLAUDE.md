@@ -21,7 +21,11 @@ Builds run in GitHub Actions; the user installs the debug APK artifact.
    mixture of 2D Gaussians (3D preview); same settings, a_max default = walking.
 6. STREET ZONE: larger polygon; wander only on OSM streets inside it (Overpass graph); A/B inside or on edge.
 7. TIMELINE: chain segments; B of segment i == A of segment i+1 (enforced); first A = real location captured BEFORE
-   mocking (editable).
+   mocking (editable). Points are labelled A, B, C, D… Points shared by two steps are FIXED (no editor may move them;
+   to change one, delete the steps after it); only the first and last point move. Steps are added/removed only at
+   the start or the end; no reordering. While editing a step, the other steps show in grey (routes as lines, zones
+   as a grey heatmap). Default speed & time per route step are data-driven (TomTom traffic at that hour → router
+   ETA × hour congestion → standard speed; walking adds street-crossing waits) until the user sets them.
 8. Noise: time-correlated Gauss–Markov error, varying accuracy (open sky ≈3–8 m, urban worse, indoor much worse),
    occasional multipath jumps, consistent speed/bearing/altitude, 1 Hz.
 

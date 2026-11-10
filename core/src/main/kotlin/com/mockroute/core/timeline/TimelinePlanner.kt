@@ -18,14 +18,20 @@ import kotlin.random.Random
 
 /** What the planner needs from the outside world (routing, road data, traffic). The app wires network + caches. */
 interface TimelineSources {
-    /** The path of a route segment (routed, or straight/hand-drawn). Should start/end near [Segment.Route.start]/end. */
-    suspend fun routeGeometry(seg: Segment.Route): RouteGeometry
+    /**
+     * The routed path of a route step (or straight/hand-drawn) with the router's ETA if it has one
+     * ([com.mockroute.core.route.RouteResult.durationS]). Should start/end near the step's start/end.
+     */
+    suspend fun route(seg: Segment.Route): com.mockroute.core.route.RouteResult
 
     /** Road graph for a street zone (null → that segment can't be planned). */
     suspend fun roadGraph(seg: Segment.StreetZone, frame: LocalFrame, polygon: Polygon2): RoadGraph?
 
-    /** Stage 5 hook: predicted speed along a car/bus route departing at [departEpochS] (copula local median), or null. */
-    suspend fun trafficMedian(seg: Segment.Route, geometry: RouteGeometry, departEpochS: Long): ((Double) -> Double)? = null
+    /** Stage 5: TomTom analysis for a car/bus route departing at [departEpochS] (local median + auto settings), or null. */
+    suspend fun traffic(seg: Segment.Route, geometry: RouteGeometry, departEpochS: Long): com.mockroute.core.traffic.TrafficAnalysis? = null
+
+    /** Time zone for hour-of-day rules (rush hours, crossing waits). */
+    val zone: java.time.ZoneId get() = java.time.ZoneId.systemDefault()
 }
 
 /** One planned segment on the global clock. */
@@ -43,6 +49,8 @@ class PlannedSegment(
     val path: List<LatLon>,
     val warning: String? = null,
     val error: String? = null,
+    /** Where the speed & time came from: "custom", or the automatic source ("route ETA × daytime at 10:05 + crossings"). */
+    val settingsSource: String = "custom",
 )
 
 class TimelinePlan(val timeline: Timeline, val startEpochS: Long, val segments: List<PlannedSegment>) {
@@ -146,19 +154,25 @@ object TimelinePlanner {
             PlannedSegment(i, seg, HoldTrajectory(seg.at, d), startOffset, d, 0.0, 0.0, 0.0, listOf(seg.at))
         }
         is Segment.Route -> {
-            var g = src.routeGeometry(seg)
+            val routed = src.route(seg)
+            var g = routed.geometry
             // Start/end EXACTLY at the shared points (a routed path starts on the snapped road).
             val pts = g.points.toMutableList()
             if (pts.isEmpty() || com.mockroute.core.geo.GeoMath.haversineMeters(pts.first(), seg.start) > 0.05) pts.add(0, seg.start)
             if (com.mockroute.core.geo.GeoMath.haversineMeters(pts.last(), seg.end) > 0.05) pts.add(seg.end)
             g = RouteGeometry.of(pts)
-            require(g.lengthM >= 1.0) { "Route ${i + 1}: set its end point B" }
-            val st = settingsOf(seg, g.lengthM)!!
-            val median = src.trafficMedian(seg, g, startEpochS + startOffset.toLong())
+            require(g.lengthM >= 1.0) { "Route ${i + 1}: set its end point" }
+            val depart = startEpochS + startOffset.toLong()
+            val traffic = src.traffic(seg, g, depart)
+            // Custom settings if the user set them; otherwise data-driven ones for this hour (traffic / ETA / standard).
+            val auto = if (seg.settings == null) com.mockroute.core.plan.AutoSettings.forRoute(seg.profile, g.lengthM, routed.durationS, depart, src.zone, traffic) else null
+            val st = seg.settings ?: auto!!.settings
+            // Walking: real stops at street crossings (always: it's how walking in a city works).
+            val stops = if (seg.profile == RoutingProfile.Walk) com.mockroute.core.plan.AutoSettings.crossingStops(g.lengthM, depart, src.zone, Random(seed xor 0x5eed)) else emptyList()
             val plan = SpeedProfileGenerator.generate(
-                SpeedProfileGenerator.Request(g, st, seg.profile, seed, v0 = v0, vEnd = vEnd, localMedian = median),
+                SpeedProfileGenerator.Request(g, st, seg.profile, seed, v0 = v0, vEnd = vEnd, localMedian = traffic?.let { a -> { s: Double -> a.medianSpeedAt(s) } }, stops = stops),
             )
-            PlannedSegment(i, seg, PlanTrajectory(g, plan), startOffset, plan.totalTimeS, g.lengthM, v0, vEnd, g.points, plan.warning)
+            PlannedSegment(i, seg, PlanTrajectory(g, plan), startOffset, plan.totalTimeS, g.lengthM, v0, vEnd, g.points, plan.warning, settingsSource = auto?.source ?: "custom")
         }
         is Segment.IndoorZone -> {
             val z = seg.zone
@@ -168,7 +182,7 @@ object TimelinePlanner {
             val zp = ZonePlanner.plan(
                 ZonePlanner.Request(poly, f, f.toLocal(seg.start), f.toLocal(seg.end), z.mixture(f, poly), st, seed, false, z.dwellProbability, z.dwellMeanS, z.wobble, z.mode),
             )
-            PlannedSegment(i, seg, zp, startOffset, zp.durationSeconds, zp.lengthM, 0.0, 0.0, zp.geometry.points, zp.warning)
+            PlannedSegment(i, seg, zp, startOffset, zp.durationSeconds, zp.lengthM, 0.0, 0.0, zp.geometry.points, zp.warning, settingsSource = if (seg.settings == null) "indoor defaults" else "custom")
         }
         is Segment.StreetZone -> {
             val z = seg.zone
@@ -183,7 +197,7 @@ object TimelinePlanner {
                     dwellMeanS = z.dwellMeanS, mode = z.mode, v0 = v0, vEnd = vEnd, connectEndpoints = true,
                 ),
             )
-            PlannedSegment(i, seg, sp.zone, startOffset, sp.zone.durationSeconds, sp.zone.lengthM, v0, vEnd, sp.zone.geometry.points, sp.zone.warning)
+            PlannedSegment(i, seg, sp.zone, startOffset, sp.zone.durationSeconds, sp.zone.lengthM, v0, vEnd, sp.zone.geometry.points, sp.zone.warning, settingsSource = if (seg.settings == null) "${z.profile.label.lowercase()} defaults" else "custom")
         }
     }
 }

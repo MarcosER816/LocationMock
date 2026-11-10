@@ -56,7 +56,7 @@ fun TimelineLayers(t: Timeline, plan: TimelinePlan?) {
     }
     val pointsJson = remember(t) {
         val feats = t.boundaries().mapIndexed { k, p ->
-            """{"type":"Feature","properties":{"label":"$k"},"geometry":{"type":"Point","coordinates":[${p.lon},${p.lat}]}}"""
+            """{"type":"Feature","properties":{"label":"${Timeline.pointLabel(k)}"},"geometry":{"type":"Point","coordinates":[${p.lon},${p.lat}]}}"""
         }
         """{"type":"FeatureCollection","features":[${feats.joinToString(",")}]}"""
     }
@@ -72,6 +72,74 @@ fun TimelineLayers(t: Timeline, plan: TimelinePlan?) {
         textField = format(span(feature["label"].asString())),
         textFont = const(listOf("Noto Sans Bold")),
         textSize = const(0.9.em),
+        textColor = const(Color.White),
+        textAllowOverlap = const(true),
+        textIgnorePlacement = const(true),
+    )
+}
+
+/**
+ * While editing step [editing]: every OTHER step in grey — routes as their (planned or straight) path, wandering
+ * zones as a grey heatmap + outline — and all points with their letters, so the user sees what comes before/after.
+ */
+@Composable
+fun TimelineContextLayers(t: Timeline, plan: TimelinePlan?, editing: Int) {
+    val linesJson = remember(t, plan, editing) {
+        val feats = t.segments.mapIndexedNotNull { i, seg ->
+            if (i == editing || seg is Segment.IndoorZone || seg is Segment.StreetZone || seg is Segment.Pause) return@mapIndexedNotNull null
+            val planned = plan?.segments?.getOrNull(i)?.takeIf { it.segment == seg }?.path
+            val pts = if (planned != null && planned.size >= 2) planned else (seg as Segment.Route).inputs
+            """{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[${pts.joinToString(",") { "[${it.lon},${it.lat}]" }}]}}"""
+        }
+        """{"type":"FeatureCollection","features":[${feats.joinToString(",")}]}"""
+    }
+    val outlinesJson = remember(t, editing) {
+        val feats = t.segments.mapIndexedNotNull { i, seg ->
+            val v = when (seg) {
+                is Segment.IndoorZone -> seg.zone.vertices
+                is Segment.StreetZone -> seg.zone.vertices
+                else -> emptyList()
+            }
+            if (i == editing || v.size < 3) null
+            else """{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[${(v + v.first()).joinToString(",") { "[${it.lon},${it.lat}]" }}]}}"""
+        }
+        """{"type":"FeatureCollection","features":[${feats.joinToString(",")}]}"""
+    }
+    val heatJson = remember(t, editing) {
+        val parts = t.segments.mapIndexedNotNull { i, seg ->
+            if (i == editing) return@mapIndexedNotNull null
+            when (seg) {
+                is Segment.IndoorZone -> zoneHeatJson(seg.zone, "97,97,97")
+                is Segment.StreetZone -> zoneHeatJson(seg.zone, "97,97,97")
+                else -> null
+            }
+        }
+        // Merge the feature arrays of each zone's FeatureCollection.
+        val feats = parts.mapNotNull { j -> j.substringAfter("\"features\":[", "").removeSuffix("]}").takeIf { it.isNotBlank() } }
+        """{"type":"FeatureCollection","features":[${feats.joinToString(",")}]}"""
+    }
+    val pointsJson = remember(t, editing) {
+        val feats = t.boundaries().mapIndexedNotNull { k, p ->
+            if (k == editing || k == editing + 1) null // the step's own points are drawn by the editor
+            else """{"type":"Feature","properties":{"label":"${Timeline.pointLabel(k)}"},"geometry":{"type":"Point","coordinates":[${p.lon},${p.lat}]}}"""
+        }
+        """{"type":"FeatureCollection","features":[${feats.joinToString(",")}]}"""
+    }
+    val grey = Color(0xFF757575)
+    val heat = rememberGeoJsonSource(GeoJsonData.JsonString(heatJson))
+    FillLayer(id = "ctx-heat", source = heat, color = feature["color"].convertToColor())
+    val outlines = rememberGeoJsonSource(GeoJsonData.JsonString(outlinesJson))
+    LineLayer(id = "ctx-outlines", source = outlines, color = const(grey), width = const(2.dp), opacity = const(0.7f))
+    val lines = rememberGeoJsonSource(GeoJsonData.JsonString(linesJson))
+    LineLayer(id = "ctx-lines", source = lines, color = const(grey), width = const(4.dp), opacity = const(0.7f), cap = const(LineCap.Round), join = const(LineJoin.Round))
+    val points = rememberGeoJsonSource(GeoJsonData.JsonString(pointsJson))
+    CircleLayer(id = "ctx-points", source = points, color = const(grey), radius = const(11.dp), strokeColor = const(Color.White), strokeWidth = const(2.dp))
+    SymbolLayer(
+        id = "ctx-points-label",
+        source = points,
+        textField = format(span(feature["label"].asString())),
+        textFont = const(listOf("Noto Sans Bold")),
+        textSize = const(0.85.em),
         textColor = const(Color.White),
         textAllowOverlap = const(true),
         textIgnorePlacement = const(true),

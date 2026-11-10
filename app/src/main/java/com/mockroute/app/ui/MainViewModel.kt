@@ -98,19 +98,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Length of the segment being planned (the geometry that will actually be played). */
     fun segmentDistance(): Double? = editor.state.value.result?.geometry?.lengthM
 
+    /** Set when the user touches Speed & time while editing a timeline step (only then are settings saved). */
+    private var settingsEditedInSegment = false
+
     /** User edits: clear the "auto, from traffic" flag. */
     fun updatePlan(transform: (SegmentPlanSettings) -> SegmentPlanSettings) {
         val cur = _plan.value ?: defaultPlan()
         _plan.value = transform(cur).copy(autoFromTraffic = false)
+        if (_editingSegment.value != null) settingsEditedInSegment = true
     }
 
     fun resetPlan() {
         _plan.value = defaultPlan()
+        if (_editingSegment.value != null) settingsEditedInSegment = true
     }
 
     fun applyCoupled(c: CoupledSliders) = updatePlan { it.applyCoupled(c) }
 
-    private fun defaultPlan() = SegmentPlanSettings.defaults(editor.state.value.profile, segmentDistance() ?: 1000.0)
+    /** Data-driven defaults for the current route (see AutoSettings): traffic → router ETA × hour → standard speed. */
+    private fun defaultPlan(): SegmentPlanSettings {
+        val st = editor.state.value
+        val d = segmentDistance() ?: return SegmentPlanSettings.defaults(st.profile, 1000.0)
+        val analysis = (traffic.status.value as? TrafficStatus.Ready)?.takeIf { it.geometry == st.result?.geometry }?.analysis
+        return com.mockroute.core.plan.AutoSettings.forRoute(
+            st.profile, d, st.result?.durationS, System.currentTimeMillis() / 1000 + 60, java.time.ZoneId.systemDefault(), analysis,
+        ).settings
+    }
 
     private fun initPlan() {
         viewModelScope.launch {
@@ -143,7 +156,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _plan.value = analysis.settings.copy(correlationLengthM = _plan.value?.correlationLengthM)
     }
 
-    val planner = PlanController(viewModelScope, routeForPlan, _plan, traffic.status)
+    val planner = PlanController(viewModelScope, routeForPlan, _plan, traffic.status) { editor.state.value.result?.durationS }
 
     /** Diagnostics: route cache key, cached samples on disk, last cache problem. */
     fun trafficCacheInfo(status: TrafficStatus): String {
@@ -182,10 +195,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     fun updateZonePlan(transform: (SegmentPlanSettings) -> SegmentPlanSettings) {
         _zonePlanSettings.value = transform(_zonePlanSettings.value)
+        if (_editingSegment.value != null) settingsEditedInSegment = true
     }
 
     fun resetZonePlan() {
         _zonePlanSettings.value = SegmentPlanSettings.zoneDefaults()
+        if (_editingSegment.value != null) settingsEditedInSegment = true
     }
 
     /** Feasibility distance for the zone: the shortest inside path A→B. */
@@ -260,20 +275,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         savedPlan = _plan.value
         savedZonePlan = _zonePlanSettings.value
         _editingSegment.value = i
+        settingsEditedInSegment = false
         _timelineOnMap.value = false
+        val tl = timelines.timeline.value
+        val lockStart = tl.startFixed(i)
+        val lockEnd = tl.endFixed(i)
         when (seg) {
             is com.mockroute.core.timeline.Segment.Route -> {
                 val mode = if (seg.mode == com.mockroute.core.timeline.RouteMode.PointToPoint) EditMode.PointToPoint else EditMode.Streets
-                editor.loadSegment(mode, seg.mode != com.mockroute.core.timeline.RouteMode.FreeDraw, seg.start, seg.end, seg.waypoints, seg.profile)
+                editor.loadSegment(mode, seg.mode != com.mockroute.core.timeline.RouteMode.FreeDraw, seg.start, seg.end, seg.waypoints, seg.profile, lockStart, lockEnd)
                 _plan.value = seg.settings ?: SegmentPlanSettings.defaults(seg.profile, 1000.0)
             }
             is com.mockroute.core.timeline.Segment.IndoorZone -> {
-                zone.load(seg.zone.copy(entry = seg.start, exit = seg.end, kind = com.mockroute.core.zone.ZoneKind.Indoor))
+                zone.lockEntry = lockStart
+                zone.lockExit = lockEnd
+                zone.load(seedFirstCorner(seg.zone, seg.start, lockStart).copy(entry = seg.start, exit = seg.end, kind = com.mockroute.core.zone.ZoneKind.Indoor))
                 _zonePlanSettings.value = seg.settings ?: SegmentPlanSettings.zoneDefaults()
                 editor.setMode(EditMode.Indoor, null)
             }
             is com.mockroute.core.timeline.Segment.StreetZone -> {
-                zone.load(seg.zone.copy(entry = seg.start, exit = seg.end, kind = com.mockroute.core.zone.ZoneKind.Streets))
+                zone.lockEntry = lockStart
+                zone.lockExit = lockEnd
+                zone.load(seedFirstCorner(seg.zone, seg.start, lockStart).copy(entry = seg.start, exit = seg.end, kind = com.mockroute.core.zone.ZoneKind.Streets))
                 _zonePlanSettings.value = seg.settings ?: SegmentPlanSettings.streetDefaults(seg.zone.profile)
                 editor.setMode(EditMode.Indoor, null)
             }
@@ -281,7 +304,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Writes the editor back into the timeline: the edited A/B become shared-point moves (neighbours follow). */
+    /** A fixed entry becomes the shape's first corner when there's no shape yet (so it's on the edge by construction). */
+    private fun seedFirstCorner(d: com.mockroute.core.zone.ZoneDefinition, entry: com.mockroute.core.geo.LatLon, locked: Boolean) =
+        if (locked && d.vertices.isEmpty()) d.copy(vertices = listOf(entry)) else d
+
+    /** Letters of the step being edited ("C" → "D"), for the editors' markers; ("A", "B") otherwise. */
+    fun editingLabels(): Pair<String, String> {
+        val i = _editingSegment.value ?: return "A" to "B"
+        return com.mockroute.core.timeline.Timeline.pointLabel(i) to com.mockroute.core.timeline.Timeline.pointLabel(i + 1)
+    }
+
+    /** Writes the editor back into the timeline; fixed (shared) points always stay where they are. */
     fun finishEditingSegment(apply: Boolean) {
         val i = _editingSegment.value ?: return
         val seg = timelines.timeline.value.segments.getOrNull(i)
@@ -291,14 +324,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     val st = editor.state.value
                     if (st.mode == EditMode.PointToPoint) {
                         val a = st.a ?: seg.start
-                        seg.copy(start = a, end = st.b ?: a, waypoints = emptyList(), mode = com.mockroute.core.timeline.RouteMode.PointToPoint, profile = st.profile, settings = _plan.value)
+                        seg.copy(start = a, end = st.b ?: a, waypoints = emptyList(), mode = com.mockroute.core.timeline.RouteMode.PointToPoint, profile = st.profile, settings = keptSettings(seg.settings, _plan.value))
                     } else {
                         val w = st.waypoints
-                        if (w.size < 2) seg.copy(profile = st.profile, settings = _plan.value)
+                        if (w.size < 2) seg.copy(profile = st.profile, settings = keptSettings(seg.settings, _plan.value))
                         else seg.copy(
                             start = w.first(), end = w.last(), waypoints = w.subList(1, w.size - 1),
                             mode = if (st.snap) com.mockroute.core.timeline.RouteMode.Streets else com.mockroute.core.timeline.RouteMode.FreeDraw,
-                            profile = st.profile, settings = _plan.value,
+                            profile = st.profile, settings = keptSettings(seg.settings, _plan.value),
                         )
                     }
                 }
@@ -307,14 +340,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     val a = d.entry ?: seg.start
                     val b = d.exit ?: seg.end
                     // The kind chip may have been switched while editing: the segment type follows it.
-                    if (d.kind == com.mockroute.core.zone.ZoneKind.Indoor) com.mockroute.core.timeline.Segment.IndoorZone(seg.id, a, b, d, _zonePlanSettings.value, seg.seedOffset)
-                    else com.mockroute.core.timeline.Segment.StreetZone(seg.id, a, b, d, _zonePlanSettings.value, seg.seedOffset)
+                    val prev = (seg as? com.mockroute.core.timeline.Segment.IndoorZone)?.settings ?: (seg as? com.mockroute.core.timeline.Segment.StreetZone)?.settings
+                    val st = keptSettings(prev, _zonePlanSettings.value)
+                    if (d.kind == com.mockroute.core.zone.ZoneKind.Indoor) com.mockroute.core.timeline.Segment.IndoorZone(seg.id, a, b, d, st, seg.seedOffset)
+                    else com.mockroute.core.timeline.Segment.StreetZone(seg.id, a, b, d, st, seg.seedOffset)
                 }
                 is com.mockroute.core.timeline.Segment.Pause -> null
             }
-            updated?.let { timelines.replace(i, it) }
+            updated?.let { timelines.replaceKeepingFixed(i, it) }
         }
         _editingSegment.value = null
+        zone.lockEntry = false
+        zone.lockExit = false
         savedRouteEditor?.let(editor::restore)
         savedZone?.let(zone::load)
         _plan.value = savedPlan
@@ -322,6 +359,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         savedRouteEditor = null
         savedZone = null
     }
+
+    /** Speed & time stay automatic (null) unless the user changed them while editing this step. */
+    private fun keptSettings(previous: SegmentPlanSettings?, edited: SegmentPlanSettings?): SegmentPlanSettings? =
+        if (settingsEditedInSegment) edited else previous
 
     /** Plays the planned timeline from segment [fromSegment] (continuous; one service run). */
     fun playTimeline(fromSegment: Int = 0) {

@@ -184,8 +184,9 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 .endpointDrag(
                     enabled = editor.mode == EditMode.PointToPoint,
                     cameraState = cameraState,
-                    a = editor.a,
-                    b = editor.b,
+                    // Fixed (shared) points can't be dragged.
+                    a = editor.a.takeUnless { editor.lockA },
+                    b = editor.b.takeUnless { editor.lockB },
                     onPreview = { dragPreview = it },
                     onMoved = { which, p -> vm.editor.setEndpoint(which, p) },
                 )
@@ -193,9 +194,13 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 .mapHandlesDrag(
                     enabled = showTimeline,
                     cameraState = cameraState,
-                    handles = timeline.boundaries().mapIndexed { k, p -> "b$k" to p },
-                    onDrag = { id, p -> id.drop(1).toIntOrNull()?.let { vm.timelines.setBoundary(it, p) } },
-                    onTap = { id -> vm.showMessage("Point ${id.drop(1)}: drag it to move it (both neighbouring segments follow)") },
+                    // Only the first and the last point are movable; shared points are fixed.
+                    handles = timeline.boundaries().mapIndexedNotNull { k, p -> if (timeline.isFixed(k)) null else "b$k" to p },
+                    onDrag = { id, p -> id.drop(1).toIntOrNull()?.let { vm.timelines.moveFreePoint(it, p) } },
+                    onTap = { id ->
+                        val k = id.drop(1).toIntOrNull() ?: 0
+                        vm.showMessage("Point ${com.mockroute.core.timeline.Timeline.pointLabel(k)}: drag it to move it")
+                    },
                 )
                 .mapHandlesDrag(
                     enabled = indoor,
@@ -213,7 +218,10 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             onMapClick = { pos, offset -> currentOnClick(pos, offset) },
             onMapLongClick = { pos, offset -> currentOnLongClick(pos, offset) },
         ) {
-            if (indoor) ZoneLayers(zoneState, zoneStatus, remember(zoneStatus) { vm.roads.lastGraph() })
+            // Stage 8.1: while editing a timeline step, the other steps in grey (drawn below the editor's layers).
+            editingSegment?.let { k -> TimelineContextLayers(timeline, (timelinePlan as? TimelinePlanState.Planned)?.plan, k) }
+            val pointLabels = remember(editingSegment) { vm.editingLabels() }
+            if (indoor) ZoneLayers(zoneState, zoneStatus, remember(zoneStatus) { vm.roads.lastGraph() }, pointLabels)
             if (showTimeline) TimelineLayers(timeline, (timelinePlan as? TimelinePlanState.Planned)?.plan)
 
             // Route being edited (simplified for display).
@@ -356,8 +364,8 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             )
             // A/B endpoints as real map layers: always pinned to their coordinates.
             val p2p = editor.mode == EditMode.PointToPoint
-            EndpointLayers("a", if (p2p) shownA else null, "A", HandleGreen)
-            EndpointLayers("b", if (p2p) shownB else null, "B", MockRed)
+            EndpointLayers("a", if (p2p) shownA else null, pointLabels.first, HandleGreen)
+            EndpointLayers("b", if (p2p) shownB else null, pointLabels.second, MockRed)
 
             val mockSource = rememberGeoJsonSource(GeoJsonData.JsonString(pointJson(sim.current?.position)))
             CircleLayer(
@@ -439,7 +447,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             if (showTimeline && editingSegment == null) {
                 Surface(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), shape = MaterialTheme.shapes.large, shadowElevation = 4.dp) {
                     Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Timeline “${timeline.name}”: drag the numbered points", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                        Text("Timeline “${timeline.name}”: drag the first or last point to move it", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                         TextButton(onClick = { vm.showTimelineOnMap(false) }) { Text("Hide") }
                         TextButton(onClick = onOpenTimeline) { Text("Open") }
                     }

@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 8 (timeline) — 0.8.0 built, CI; awaiting phone test. Stages 1–7 verified on device._
+_Last updated: 2026-11-10 — Stage 8 (timeline) — 0.8.1 (user rules: fixed points, letters, context, auto speed/time) built, CI; awaiting phone test. Stages 1–7 verified on device._
 
 ## Done
 ### Stage 8 — TIMELINE (0.8.0)
@@ -278,6 +278,54 @@ optional API-key secrets → BuildConfig.
 
 - **Phone result 2026-11-10 (0.6.1):** shape closes; "everything seems fine". The fps figure of the 3D preview
   wasn't reported; ask for it if performance comes up.
+
+## 0.8.1 — timeline rules from the phone review (2026-11-10)
+1. **Bug: a street zone's start (fixed to the previous step's end) moved.** The zone editor snapped A to the
+   nearest road when the zone opened or roads loaded (`resnapEndpoints`), and Done wrote that back through
+   `replace()`, moving the shared point. Fix: **locks**:
+   - `ZoneEditor.lockEntry/lockExit` and `RouteEditorState.lockA/lockB` block taps, drags, snapping and
+     re-snapping of fixed points.
+   - `Timeline.replaceKeepingFixed()` is the only write-back and forces fixed points to stay.
+   - Street zones start off-road through a connector (`connectEndpoints`).
+2. **Letters:** points are labelled A, B, C, … Z, AA, AB… (`Timeline.pointLabel(k)`) on the map, on the cards
+   ("C → D · Route") and on the editors' markers.
+3. **Context while editing a step** (`TimelineContextLayers`): the other steps in grey. Routes are drawn as their
+   planned (or straight) path; zones as a grey heatmap of their mixture plus a grey outline. All other points are
+   grey with their letters.
+4. **Fixed points / ends only / no reordering:**
+   - `isFixed(k)` = 0 < k < n. Only the first and last points move (`moveFreePoint`; map drag handles exist only
+     for those).
+   - Steps are added at the end (`add`) or start (`addAtStart`: ends at the old A, which becomes fixed) and removed
+     only at the ends (`removeFirst` / `removeLast`). Reordering (drag/arrows) is removed.
+   - Fixes are only offered when legal (`canSnap`: the point is free; `canInsertConnector`: only before the first or
+     after the last step). Otherwise the card says "That point is fixed…".
+   - New zone steps start with their fixed entry as the **first corner** of the shape, so it's on the edge by
+     construction; that corner can't be dragged or undone.
+5. **Automatic speed & time** (`plan.AutoSettings`), used whenever a step's settings are null. Settings are saved
+   only if the user touched Speed & time while editing; **Reset to automatic** sets them back to null.
+   - **Car/Bus + TomTom key:** the fitted Stage 5 analysis for the step's departure (time-dependent ETA, historic
+     speeds, its speed limits).
+   - **Otherwise the router's ETA** (ORS/GraphHopper durations account for road class and limits) × hour
+     congestion (night 1.0 / day 1.15 / rush 1.35; bus × 1.15).
+   - **No ETA:** standard urban speed for the hour (walk 4.8–5; car 40 / 30 / 20; bus 0.8 × car, ≥ 15 km/h).
+   - **Walking:** street-crossing waits every ~150 m. Stop probability and mean wait by hour: night 0.3 / 12 s,
+     day 0.5 / 22 s, rush 0.6 / 30 s; gamma k = 2, ≤ 120 s. These are real v = 0 holds in the plan
+     (`crossingStops`), and their expected total is added to the time mean.
+   - Time CV 12 %, speed CV 20 % (walk 12 %), within the caps and ≥ the physical minimum.
+   - Rush hour = weekdays 07–10 and 17–20; night = 22–06; weekends have no rush.
+   - The card shows "Speed & time: automatic (route ETA × daytime at 10:05 + crossings)". Standalone A→B / Streets
+     routes use the same automatic defaults when unset.
+   - `TimelineSources` changed: `route(seg): RouteResult` (with ETA) and `traffic(seg, geometry, depart):
+     TrafficAnalysis?`.
+- Tests: `TimelineRulesTest`:
+  - letters,
+  - free/fixed points,
+  - **1,000 sequences where editors return moved A/B: fixed points never move**,
+  - add/remove at the ends and the first-corner seed,
+  - fix availability,
+  - auto settings: rush hour > night, ETA × factor, the standard-speed fallback, walking waits, feasible, crossing
+    stops.
+  - Core total **99**.
 
 ## Stage 8: data model, file format, migrations
 **Model (`:core` package `timeline`):**
@@ -689,6 +737,15 @@ list of `LatLon`.
 - Run the Stage 8 phone test script below.
 - Stage 9: GPS noise (Gauss–Markov error, environment-dependent accuracy, multipath jumps).
 
+## How to verify 0.8.1 on phone (do first)
+1. Timeline: + Route (Edit → set point B) → + Street → **Edit**: the street zone's first corner is already at B, and
+   B doesn't move when the roads load or while you draw. The previous route shows in **grey**, with grey letters A.
+2. Points read **A, B, C…** on cards ("B → C · Street zone") and on the map.
+3. Only the first and last cards have **Delete**. There is no reordering. "+ Route at start" adds before A. Shared
+   points can't be dragged on the map (only the first and last).
+4. A route card says "Speed & time: automatic (route ETA × … at HH:MM [+ crossings])". Walking plans pause at
+   crossings. Change Speed & time while editing: the card says "custom" plus **Reset to automatic**.
+
 ## How to verify on phone (Stage 8 test script)
 1. Install 0.8.0. Map → **⏱**. The start card says "Your real location".
 2. **+ Route** → Edit: on the map set B about 300 m away (A→B) → **Done**. You're back on the timeline; the card
@@ -778,7 +835,7 @@ list of `LatLon`.
   `platforms;android-36` + `build-tools;36.0.0` with sdkmanager and point `sdk.dir` in `local.properties` at it.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
-- Verified 2026-11-10 in sandbox: `:core:test` 93/93 passed (Stage 8: 1,000 random edit sequences, pause runs, fixes, codec/versioning, Route→Indoor→Route→Street→Pause continuity ×20 seeds, GPX, seeds); before: 86/86 passed (Stage 7: Overpass parse/query, mode filters, polygon clipping, oneway, SCC, snapping, 150 walk + 150 car plans on/inside/on-time/accel/oneway/turn caps, dominant vs uniform, 30×30 perf); before: 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
+- Verified 2026-11-10 in sandbox: `:core:test` 99/99 passed (0.8.1 rules + auto settings); before: 93/93 passed (Stage 8: 1,000 random edit sequences, pause runs, fixes, codec/versioning, Route→Indoor→Route→Street→Pause continuity ×20 seeds, GPX, seeds); before: 86/86 passed (Stage 7: Overpass parse/query, mode filters, polygon clipping, oneway, SCC, snapping, 150 walk + 150 car plans on/inside/on-time/accel/oneway/turn caps, dominant vs uniform, 30×30 perf); before: 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
 
 ## 0.2.2 (2026-11-10)
 - **Phone round 2:** the A/B markers now follow the map (map-layer approach confirmed ✅).

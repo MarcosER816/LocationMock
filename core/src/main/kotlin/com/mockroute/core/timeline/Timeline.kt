@@ -188,8 +188,9 @@ data class Timeline(
         val p = boundary(size)
         val seg: Segment = when (kind) {
             SegmentKind.Route -> Segment.Route(id, p, p, profile)
-            SegmentKind.Indoor -> Segment.IndoorZone(id, p, p, ZoneDefinition(entry = p, exit = p, kind = ZoneKind.Indoor))
-            SegmentKind.Street -> Segment.StreetZone(id, p, p, ZoneDefinition(entry = p, exit = p, kind = ZoneKind.Streets, profile = profile))
+            // The entry point is the shape's first corner, so it is on the edge whatever the user draws next.
+            SegmentKind.Indoor -> Segment.IndoorZone(id, p, p, ZoneDefinition(vertices = listOf(p), entry = p, exit = p, kind = ZoneKind.Indoor))
+            SegmentKind.Street -> Segment.StreetZone(id, p, p, ZoneDefinition(vertices = listOf(p), entry = p, exit = p, kind = ZoneKind.Streets, profile = profile))
             SegmentKind.Pause -> Segment.Pause(id, p)
         }
         return copy(segments = segments + seg).normalized()
@@ -307,6 +308,67 @@ data class Timeline(
         }
     }
 
+    // ---- Stage 8.1 rules: fixed points, ends-only add/remove, letter labels ----------------------------
+
+    /**
+     * A point shared by two steps (one before and one after) is FIXED: nothing may move it. Only the very first
+     * point (k = 0) and the very last (k = n) are free. To change a fixed point, delete the steps after it.
+     */
+    fun isFixed(k: Int): Boolean = k in 1 until size
+
+    /** Is segment [i]'s start / end fixed? */
+    fun startFixed(i: Int): Boolean = isFixed(i)
+    fun endFixed(i: Int): Boolean = isFixed(i + 1)
+
+    /** Moves a FREE point only (k = 0 or k = n); fixed points are left untouched. */
+    fun moveFreePoint(k: Int, p: LatLon, fromRealLocation: Boolean = false): Timeline =
+        if (isFixed(k) || k !in 0..size) this else setBoundary(k, p, fromRealLocation)
+
+    /**
+     * Replaces segment [i] with an edited version, but its fixed points stay where they are (the editor may have
+     * snapped them; that must not move the neighbours). Free ends are applied.
+     */
+    fun replaceKeepingFixed(i: Int, seg: Segment): Timeline {
+        if (i !in segments.indices) return this
+        var s = seg
+        if (startFixed(i)) s = s.withStart(boundary(i))
+        if (endFixed(i)) s = s.withEnd(boundary(i + 1))
+        return replace(i, s)
+    }
+
+    /** Adds a step BEFORE the first one: it ends at the current first point (now fixed) and starts there too. */
+    fun addAtStart(kind: SegmentKind, id: String, profile: RoutingProfile = RoutingProfile.Walk): Timeline {
+        if (size == 0) return add(kind, id, profile)
+        val p = anchor
+        val seg: Segment = when (kind) {
+            SegmentKind.Route -> Segment.Route(id, p, p, profile)
+            SegmentKind.Indoor -> Segment.IndoorZone(id, p, p, ZoneDefinition(vertices = listOf(p), entry = p, exit = p, kind = ZoneKind.Indoor))
+            SegmentKind.Street -> Segment.StreetZone(id, p, p, ZoneDefinition(vertices = listOf(p), entry = p, exit = p, kind = ZoneKind.Streets, profile = profile))
+            SegmentKind.Pause -> Segment.Pause(id, p)
+        }
+        return copy(segments = listOf(seg) + segments, anchorIsRealLocation = false).normalized()
+    }
+
+    /** Deletes the first step; its end becomes the new first point (free). */
+    fun removeFirst(): Timeline = if (size == 0) this else copy(
+        anchor = segments[0].end,
+        anchorIsRealLocation = size == 1 && anchorIsRealLocation,
+        segments = segments.drop(1),
+    ).normalized()
+
+    /** Deletes the last step; its start becomes the new last point (free). */
+    fun removeLast(): Timeline = if (size == 0) this else copy(segments = segments.dropLast(1)).normalized()
+
+    /** Fixes are only offered when they don't move a fixed point or insert a step in the middle. */
+    fun canSnap(issue: Issue): Boolean = when (issue.which) {
+        Issue.End.Start -> !startFixed(issue.segment)
+        Issue.End.EndPoint -> !endFixed(issue.segment)
+        Issue.End.Whole -> false
+    }
+
+    fun canInsertConnector(issue: Issue): Boolean =
+        (issue.which == Issue.End.Start && issue.segment == 0) || (issue.which == Issue.End.EndPoint && issue.segment == size - 1)
+
     /** True if every boundary is shared exactly (the invariant). */
     fun chainOk(): Boolean {
         if (segments.isEmpty()) return true
@@ -317,5 +379,16 @@ data class Timeline(
 
     companion object {
         const val EDGE_TOLERANCE_M = 0.5
+
+        /** A, B, …, Z, AA, AB, … (spreadsheet-style) for point k. */
+        fun pointLabel(k: Int): String {
+            var n = k
+            val sb = StringBuilder()
+            do {
+                sb.append('A' + n % 26)
+                n = n / 26 - 1
+            } while (n >= 0)
+            return sb.reverse().toString()
+        }
     }
 }

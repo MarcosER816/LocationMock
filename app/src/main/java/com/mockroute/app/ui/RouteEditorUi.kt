@@ -154,12 +154,21 @@ fun SegmentSheet(
 
             // Mode-specific controls.
             when (state.mode) {
-                EditMode.PointToPoint -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { onPick(Endpoint.A) }) {
-                        Text(if (state.pickTarget == Endpoint.A) "Tap map for A…" else "Move A")
+                EditMode.PointToPoint -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (!state.lockA) {
+                        OutlinedButton(onClick = { onPick(Endpoint.A) }) {
+                            Text(if (state.pickTarget == Endpoint.A) "Tap map for A…" else "Move A")
+                        }
+                        if (!state.aIsRealLocation) TextButton(onClick = onUseRealA) { Text("A = my location") }
                     }
-                    if (!state.aIsRealLocation) TextButton(onClick = onUseRealA) { Text("A = my location") }
-                    if (state.b != null) TextButton(onClick = onClear) { Text("Clear B") }
+                    if (state.b != null && !state.lockB) TextButton(onClick = onClear) { Text("Clear B") }
+                    if (state.lockA || state.lockB) {
+                        Text(
+                            "Start${if (state.lockB) " and end are" else " is"} fixed by the neighbouring steps",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline,
+                        )
+                    }
                 }
                 EditMode.Streets -> {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {

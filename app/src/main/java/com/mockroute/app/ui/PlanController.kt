@@ -54,6 +54,8 @@ class PlanController(
     private val route: StateFlow<Pair<RouteGeometry?, RoutingProfile>>,
     private val settings: StateFlow<SegmentPlanSettings?>,
     private val traffic: StateFlow<TrafficStatus>,
+    /** Router ETA of the current route (for data-driven defaults when the user hasn't set speed & time). */
+    private val eta: () -> Double? = { null },
 ) {
     private val _seed = MutableStateFlow(Random.nextLong(1, Long.MAX_VALUE))
     val seed: StateFlow<Long> = _seed.asStateFlow()
@@ -97,7 +99,10 @@ class PlanController(
     private suspend fun compute(inp: Inputs): PlanStatus {
         val g = inp.geometry
         if (g == null || g.size < 2 || g.lengthM < 1.0) return PlanStatus.NoRoute
-        val st = inp.settings ?: SegmentPlanSettings.defaults(inp.profile, g.lengthM)
+        // Not set by the user → data-driven: traffic (car/bus with TomTom), router ETA × hour, or standard speed.
+        val st = inp.settings ?: com.mockroute.core.plan.AutoSettings.forRoute(
+            inp.profile, g.lengthM, eta(), System.currentTimeMillis() / 1000 + 60, java.time.ZoneId.systemDefault(), inp.traffic,
+        ).settings
         if (!st.feasibility(g.lengthM).feasible) return PlanStatus.Infeasible
         _status.value = PlanStatus.Generating
         return withContext(Dispatchers.Default) {

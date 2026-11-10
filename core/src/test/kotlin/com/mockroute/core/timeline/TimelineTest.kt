@@ -129,7 +129,8 @@ class TimelineTest {
     private val ways = Overpass.parse(requireNotNull(javaClass.getResource("/fixtures/overpass_grid.json")).readText())
 
     private val sources = object : TimelineSources {
-        override suspend fun routeGeometry(seg: Segment.Route) = RouteGeometry.of(seg.inputs)
+        override suspend fun route(seg: Segment.Route) =
+            com.mockroute.core.route.StraightLineProvider.build(seg.inputs, seg.profile)
         override suspend fun roadGraph(seg: Segment.StreetZone, frame: LocalFrame, polygon: Polygon2) =
             RoadGraph.build(ways, polygon, frame, seg.zone.profile)
     }

@@ -85,25 +85,43 @@ class TimelineController(
 
     // ---- edits ----------------------------------------------------------------------------------
 
+    /** Stage 8.1: steps are added/removed only at the ends; order is fixed; shared points can't move. */
+    fun addAtStart(kind: SegmentKind) = edit { it.addAtStart(kind, newId(), (it.segments.firstOrNull() as? Segment.Route)?.profile ?: RoutingProfile.Walk) }
+    fun removeFirst() = edit { it.removeFirst() }
+    fun removeLast() = edit { it.removeLast() }
+
+    /** Free points only (first and last). */
+    fun moveFreePoint(k: Int, p: LatLon) = edit { it.moveFreePoint(k, p) }
+
+    /** Editor result: fixed points stay where they are. */
+    fun replaceKeepingFixed(i: Int, s: Segment) = edit { it.replaceKeepingFixed(i, s) }
+
+    /** Back to data-driven speed & time for step [i]. */
+    fun resetToAuto(i: Int) = edit { t ->
+        when (val s = t.segments.getOrNull(i)) {
+            is Segment.Route -> t.replaceKeepingFixed(i, s.copy(settings = null))
+            is Segment.IndoorZone -> t.replaceKeepingFixed(i, s.copy(settings = null))
+            is Segment.StreetZone -> t.replaceKeepingFixed(i, s.copy(settings = null))
+            else -> t
+        }
+    }
+
     fun add(kind: SegmentKind) = edit {
         // Before the first segment, (re)capture the real location as the first A if that's what A is meant to be.
         val base = if (it.size == 0 && it.anchorIsRealLocation) realLocation()?.let { p -> it.setAnchor(p, true) } ?: it else it
         val prof = (base.segments.lastOrNull() as? Segment.Route)?.profile ?: RoutingProfile.Walk
         base.add(kind, newId(), prof)
     }
-    fun remove(i: Int) = edit { it.remove(i) }
-    fun move(from: Int, to: Int) = edit { it.move(from, to) }
-    fun replace(i: Int, s: Segment) = edit { it.replace(i, s) }
-    fun setBoundary(k: Int, p: LatLon) = edit { it.setBoundary(k, p) }
+    fun replace(i: Int, s: Segment) = edit { it.replaceKeepingFixed(i, s) }
     fun rename(n: String) = edit { it.copy(name = n) }
     fun reroll(i: Int) = edit { t -> t.segments.getOrNull(i)?.let { t.replace(i, it.reroll()) } ?: t }
     fun rerollAll() = edit { it.rerollAll(System.nanoTime()) }
-    fun fixSnap(issue: Issue) = edit { it.snapToEdge(issue) }
-    fun fixConnector(issue: Issue) = edit { it.insertConnector(issue, newId()) }
+    fun fixSnap(issue: Issue) = edit { if (it.canSnap(issue)) it.snapToEdge(issue) else it }
+    fun fixConnector(issue: Issue) = edit { if (it.canInsertConnector(issue)) it.insertConnector(issue, newId()) else it }
 
     /** First A = the real location (captured now, before any mocking). */
     fun anchorToRealLocation() {
-        realLocation()?.let { p -> edit { it.setAnchor(p, isRealLocation = true) } }
+        realLocation()?.let { p -> edit { if (it.isFixed(0)) it else it.setAnchor(p, isRealLocation = true) } }
     }
 
     fun newTimeline() {
@@ -133,14 +151,14 @@ class TimelineController(
     }
 
     private fun sources() = object : TimelineSources {
-        override suspend fun routeGeometry(seg: Segment.Route): RouteGeometry {
+        override suspend fun route(seg: Segment.Route): RouteResult {
             val s = settings() ?: AppSettings()
             val snap = seg.mode != RouteMode.FreeDraw
             val pts = seg.inputs
-            if (seg.mode == RouteMode.PointToPoint) return routing.route(listOf(seg.start, seg.end), seg.profile, snap, s).geometry
-            // Street-by-street / free draw: one leg per consecutive pair, concatenated.
+            if (seg.mode == RouteMode.PointToPoint) return routing.route(listOf(seg.start, seg.end), seg.profile, snap, s)
+            // Street-by-street / free draw: one leg per consecutive pair, concatenated (ETA = sum of legs).
             val legs = pts.zipWithNext().map { (a, b) -> routing.route(listOf(a, b), seg.profile, snap, s) }
-            return RouteResult.concat(legs, seg.profile)?.geometry ?: RouteGeometry.of(pts)
+            return RouteResult.concat(legs, seg.profile) ?: com.mockroute.core.route.StraightLineProvider.build(pts, seg.profile)
         }
 
         override suspend fun roadGraph(seg: Segment.StreetZone, frame: LocalFrame, polygon: Polygon2): RoadGraph? {
@@ -154,7 +172,7 @@ class TimelineController(
             return RoadGraph.build(ways, polygon, frame, z.profile)
         }
 
-        override suspend fun trafficMedian(seg: Segment.Route, geometry: RouteGeometry, departEpochS: Long): ((Double) -> Double)? {
+        override suspend fun traffic(seg: Segment.Route, geometry: RouteGeometry, departEpochS: Long): com.mockroute.core.traffic.TrafficAnalysis? {
             if (seg.profile == RoutingProfile.Walk) return null
             val key = settings()?.tomTomApiKey.orEmpty()
             if (key.isBlank()) return null
@@ -162,9 +180,7 @@ class TimelineController(
             val provider = TomTomTrafficProvider(key, zone) { repo.countTrafficRequest(LocalDate.now(zone).toString()) }
             val mode = if (seg.profile == RoutingProfile.Bus) TrafficMode.Bus else TrafficMode.Car
             return runCatching {
-                val a = TrafficPlanner.analyze(geometry, departEpochS, mode, provider, trafficCache, System.currentTimeMillis() / 1000, zone)
-                val f: (Double) -> Double = { s -> a.medianSpeedAt(s) }
-                f
+                TrafficPlanner.analyze(geometry, departEpochS, mode, provider, trafficCache, System.currentTimeMillis() / 1000, zone)
             }.getOrNull()
         }
     }

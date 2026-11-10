@@ -53,6 +53,13 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
 
     fun load(def: ZoneDefinition) = _state.update { ZoneEditorState(def, if (def.closed) ZoneTool.Hotspots else ZoneTool.Draw) }
 
+    /** Timeline: entry/exit shared with a neighbouring step are fixed — never snapped, dragged or re-placed. */
+    @Volatile var lockEntry: Boolean = false
+    @Volatile var lockExit: Boolean = false
+
+    /** The first corner is the fixed entry (it guarantees the entry is on the edge) → it can't be moved/undone either. */
+    private fun firstCornerLocked(d: ZoneDefinition) = lockEntry && d.vertices.isNotEmpty() && d.vertices.first() == d.entry
+
     fun setTool(t: ZoneTool) = _state.update { it.copy(tool = t) }
 
     fun onMapTap(p: LatLon) {
@@ -64,8 +71,8 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
                 val tooClose = last != null && com.mockroute.core.geo.GeoMath.haversineMeters(last, p) < MIN_CORNER_SPACING_M
                 if (!tooClose) update { it.copy(vertices = it.vertices + p) }
             }
-            ZoneTool.Entry -> snap(p)?.let { q -> update { it.copy(entry = q) } }
-            ZoneTool.Exit -> snap(p)?.let { q -> update { it.copy(exit = q) } }
+            ZoneTool.Entry -> if (!lockEntry) snap(p)?.let { q -> update { it.copy(entry = q) } }
+            ZoneTool.Exit -> if (!lockExit) snap(p)?.let { q -> update { it.copy(exit = q) } }
             ZoneTool.Hotspots -> moveComponent(s.selected, p)
         }
     }
@@ -101,13 +108,14 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
      * snapped point must not change the definition (that would trigger re-planning → re-snapping → … forever).
      */
     fun resnapEndpoints() {
-        fun moved(p: LatLon?): LatLon? {
+        fun moved(p: LatLon?, locked: Boolean): LatLon? {
+            if (locked) return p
             val q = p?.let(::snap) ?: return p
             return if (com.mockroute.core.geo.GeoMath.haversineMeters(p, q) > 0.5) q else p
         }
         val d = _state.value.def
-        val e = moved(d.entry)
-        val x = moved(d.exit)
+        val e = moved(d.entry, lockEntry)
+        val x = moved(d.exit, lockExit)
         if (e != d.entry || x != d.exit) update { it.copy(entry = e, exit = x) }
     }
 
@@ -118,7 +126,7 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
         return null
     }
 
-    fun undoVertex() = update { if (it.closed) it else it.copy(vertices = it.vertices.dropLast(1)) }
+    fun undoVertex() = update { if (it.closed || (firstCornerLocked(it) && it.vertices.size <= 1)) it else it.copy(vertices = it.vertices.dropLast(1)) }
 
     /** Closes the shape; returns a user message if it can't be closed. */
     fun close(): String? {
@@ -134,8 +142,8 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
         _state.update {
             it.copy(
                 def = it.def.copy(
-                    entry = it.def.entry?.let(::snap),
-                    exit = it.def.exit?.let(::snap),
+                    entry = if (lockEntry) it.def.entry else it.def.entry?.let(::snap),
+                    exit = if (lockExit) it.def.exit else it.def.exit?.let(::snap),
                     components = s.components(),
                 ),
                 tool = if (it.def.entry == null) ZoneTool.Entry else ZoneTool.Hotspots,
@@ -146,20 +154,32 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
 
     fun reopen() = _state.update { it.copy(def = it.def.copy(closed = false), tool = ZoneTool.Draw) }
 
-    fun clear() = _state.update { ZoneEditorState() }
+    fun clear() = _state.update {
+        if (lockEntry || lockExit) {
+            // Keep the fixed points (and the fixed first corner).
+            val d = it.def
+            ZoneEditorState(ZoneDefinition(vertices = if (firstCornerLocked(d)) d.vertices.take(1) else emptyList(), entry = d.entry, exit = d.exit, kind = d.kind, profile = d.profile))
+        } else ZoneEditorState()
+    }
 
     /** Drag of a handle: "v<i>" vertex, "entry", "exit", "c<i>" hotspot mean. */
     fun drag(id: String, p: LatLon) {
         when {
-            id == "entry" -> snap(p)?.let { q -> update { it.copy(entry = q) } }
-            id == "exit" -> snap(p)?.let { q -> update { it.copy(exit = q) } }
+            id == "entry" -> if (!lockEntry) snap(p)?.let { q -> update { it.copy(entry = q) } }
+            id == "exit" -> if (!lockExit) snap(p)?.let { q -> update { it.copy(exit = q) } }
             id.startsWith("v") -> {
                 val i = id.drop(1).toIntOrNull() ?: return
+                if (i == 0 && firstCornerLocked(_state.value.def)) return
                 update { d ->
                     if (i !in d.vertices.indices) d else d.copy(vertices = d.vertices.toMutableList().also { it[i] = p })
                 }
-                // Keep A/B on the (moved) edge.
-                update { it.copy(entry = it.entry?.let(::snap) ?: it.entry, exit = it.exit?.let(::snap) ?: it.exit) }
+                // Keep the free A/B on the (moved) edge; fixed ones stay put.
+                update {
+                    it.copy(
+                        entry = if (lockEntry) it.entry else it.entry?.let(::snap) ?: it.entry,
+                        exit = if (lockExit) it.exit else it.exit?.let(::snap) ?: it.exit,
+                    )
+                }
             }
             id.startsWith("c") -> id.drop(1).toIntOrNull()?.let { moveComponent(it, p) }
         }

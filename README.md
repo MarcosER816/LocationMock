@@ -52,9 +52,10 @@ generates a different plan; **Lock time** keeps the duration fixed. **Play plan*
 the route with that speed profile.
 
 ## Timeline (Stage 8)
-Tap **⏱** on the map to chain segments: **+ Route / + Indoor / + Street / + Pause**. Each segment starts where
-the previous one ends (move a shared point and both neighbours follow); the first one starts at your real
-location. **Plan all**, then **Play** runs the whole day in one go; the notification shows the current segment,
+Tap **⏱** on the map to chain steps: **+ Route / + Indoor / + Street / + Pause**. Points are named A, B, C…; each
+step starts where the previous one ends, and those shared points are fixed (only the first and last point move;
+steps are added or deleted only at the start or the end). The first point A is your real location. Speed and time
+are automatic (traffic at that hour, route ETA, and street-crossing waits when walking) unless you set them. **Plan all**, then **Play** runs the whole day in one go; the notification shows the current segment,
 and **Skip** jumps ahead. Save, load, import/export timelines (JSON) and export the planned track as GPX.
 
 ## Street zone (Stage 7)

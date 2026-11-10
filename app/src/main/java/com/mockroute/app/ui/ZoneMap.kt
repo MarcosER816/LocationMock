@@ -86,7 +86,12 @@ fun Modifier.mapHandlesDrag(
 
 /** All zone map layers (indoor and streets). Must be called inside the MaplibreMap content. */
 @Composable
-fun ZoneLayers(state: ZoneEditorState, status: ZoneStatus, roads: com.mockroute.core.streets.RoadGraph? = null) {
+fun ZoneLayers(
+    state: ZoneEditorState,
+    status: ZoneStatus,
+    roads: com.mockroute.core.streets.RoadGraph? = null,
+    labels: Pair<String, String> = "A" to "B",
+) {
     val def = state.def
     // Stage 7: grey overlay of the usable roads (street zones).
     val roadsJson = remember(roads, def.kind) {
@@ -147,8 +152,8 @@ fun ZoneLayers(state: ZoneEditorState, status: ZoneStatus, roads: com.mockroute.
     )
 
     // Entry/exit, always on the edge.
-    EndpointLayers("zone-a", def.entry, "A", Color(0xFF1E8E3E))
-    EndpointLayers("zone-b", def.exit, "B", Color(0xFFD93025))
+    EndpointLayers("zone-a", def.entry, labels.first, Color(0xFF1E8E3E))
+    EndpointLayers("zone-b", def.exit, labels.second, Color(0xFFD93025))
 }
 
 /** Each undirected road once (twin edges skipped), as LineStrings. */
@@ -192,11 +197,15 @@ private fun pointsJson(points: List<LatLon>, labels: List<String>): String =
     }
 
 /** 40×40 density cells inside the polygon as rgba-coloured squares (alpha ∝ density^0.7). */
-private fun heatJson(state: ZoneEditorState): String {
-    val f = state.frame ?: return EMPTY
-    val poly = state.polygon ?: return EMPTY
-    if (!state.def.closed) return EMPTY
-    val mix: GaussianMixture2D = runCatching { state.def.copy(components = state.components()).mixture(f, poly) }.getOrNull() ?: return EMPTY
+private fun heatJson(state: ZoneEditorState): String =
+    if (!state.def.closed) EMPTY else zoneHeatJson(state.def.copy(components = state.components()), "230,81,0")
+
+/** Heat cells for any zone definition in colour [rgb] ("r,g,b"); used grey for the other timeline steps. */
+internal fun zoneHeatJson(def: com.mockroute.core.zone.ZoneDefinition, rgb: String): String {
+    val f = def.frame() ?: return EMPTY
+    val poly = def.polygon(f) ?: return EMPTY
+    if (!def.closed) return EMPTY
+    val mix: GaussianMixture2D = runCatching { def.mixture(f, poly) }.getOrNull() ?: return EMPTY
     val n = 40
     val grid = mix.grid(n, n, poly.minX, poly.maxX, poly.minY, poly.maxY, poly)
     val max = grid.maxOrNull()?.takeIf { it > 0 } ?: return EMPTY
@@ -212,7 +221,7 @@ private fun heatJson(state: ZoneEditorState): String {
         val ring = listOf(Vec2(x0, y0), Vec2(x0 + dx, y0), Vec2(x0 + dx, y0 + dy), Vec2(x0, y0 + dy), Vec2(x0, y0)).map(f::toLatLon)
         if (!first) sb.append(',')
         first = false
-        sb.append("""{"type":"Feature","properties":{"color":"rgba(230,81,0,""")
+        sb.append("""{"type":"Feature","properties":{"color":"rgba($rgb,""")
             .append(String.format(Locale.US, "%.3f", a))
             .append(""")"},"geometry":{"type":"Polygon","coordinates":[[""").append(coords(ring)).append("]]}}")
     }

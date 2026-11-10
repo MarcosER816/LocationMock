@@ -43,6 +43,9 @@ data class RouteEditorState(
     val playSpeedKmh: Double = defaultSpeedKmh(RoutingProfile.Walk),
     /** Bumped to force point-to-point re-routing (settings changed / Retry). */
     val revision: Int = 0,
+    /** Timeline: A / B shared with a neighbouring step → fixed (taps and drags can't move them). */
+    val lockA: Boolean = false,
+    val lockB: Boolean = false,
 ) {
     val loading: Boolean get() = if (mode == EditMode.PointToPoint) p2pLoading else legs.any { it.result == null }
 
@@ -138,24 +141,30 @@ class RouteEditor(
     // ---- point-to-point ----------------------------------------------------------------------
 
     fun setEndpoint(which: Endpoint, p: LatLon) = _state.update {
+        if ((which == Endpoint.A && it.lockA) || (which == Endpoint.B && it.lockB)) return@update it
         when (which) {
             Endpoint.A -> it.copy(a = p, aIsRealLocation = false, pickTarget = Endpoint.B)
             Endpoint.B -> it.copy(b = p, pickTarget = Endpoint.B)
         }
     }
 
-    fun pickNext(which: Endpoint) = _state.update { it.copy(pickTarget = which) }
+    fun pickNext(which: Endpoint) = _state.update { if (which == Endpoint.A && it.lockA) it else it.copy(pickTarget = which) }
 
     fun useRealLocationAsA(real: LatLon?) {
-        if (real != null) _state.update { it.copy(a = real, aIsRealLocation = true) }
+        if (real != null) _state.update { if (it.lockA) it else it.copy(a = real, aIsRealLocation = true) }
     }
 
-    fun swapAB() = _state.update { it.copy(a = it.b, b = it.a, aIsRealLocation = false) }
+    fun swapAB() = _state.update { if (it.lockA || it.lockB) it else it.copy(a = it.b, b = it.a, aIsRealLocation = false) }
 
     // ---- street-by-street ----------------------------------------------------------------------
 
     fun addWaypoint(p: LatLon) {
         val s = _state.value
+        // Fixed end (timeline): new points go BEFORE it, so the route still ends at the fixed point.
+        if (s.lockB && s.waypoints.size >= 2) {
+            insertBeforeLast(p)
+            return
+        }
         val last = s.waypoints.lastOrNull()
         if (last == null) {
             _state.update { it.copy(waypoints = listOf(p)) }
@@ -193,14 +202,29 @@ class RouteEditor(
     }
 
     /** Stage 8: load a timeline route segment into the editor (legs re-routed from the cache). */
-    fun loadSegment(mode: EditMode, snap: Boolean, a: LatLon, b: LatLon, waypoints: List<LatLon>, profile: RoutingProfile) {
+    fun loadSegment(
+        mode: EditMode,
+        snap: Boolean,
+        a: LatLon,
+        b: LatLon,
+        waypoints: List<LatLon>,
+        profile: RoutingProfile,
+        lockA: Boolean = false,
+        lockB: Boolean = false,
+    ) {
         legJobs.values.forEach { it.cancel() }
         legJobs.clear()
+        val hasB = b != a
         when (mode) {
-            EditMode.PointToPoint -> _state.value = RouteEditorState(mode = mode, profile = profile, a = a, b = b.takeIf { it != a }, aIsRealLocation = false)
+            EditMode.PointToPoint -> _state.value = RouteEditorState(
+                mode = mode, profile = profile, a = a, b = b.takeIf { hasB || lockB }, aIsRealLocation = false,
+                lockA = lockA, lockB = lockB,
+            )
             else -> {
                 _state.value = RouteEditorState(mode = EditMode.Streets, profile = profile, snap = snap)
-                (listOf(a) + waypoints + listOf(b)).distinct().forEach { addWaypoint(it) }
+                val pts = (listOf(a) + waypoints + if (hasB || lockB) listOf(b) else emptyList()).distinct()
+                pts.forEach { addWaypoint(it) }
+                _state.update { it.copy(lockA = lockA, lockB = lockB) }
             }
         }
     }
@@ -212,19 +236,60 @@ class RouteEditor(
         _state.value = st
     }
 
+    private fun insertBeforeLast(p: LatLon) {
+        val s = _state.value
+        val end = s.waypoints.last()
+        val prev = s.waypoints[s.waypoints.size - 2]
+        val k = s.legs.lastIndex
+        legJobs.remove(k)?.cancel()
+        _state.update {
+            it.copy(
+                waypoints = it.waypoints.dropLast(1) + p + end,
+                legs = it.legs.dropLast(1) + Leg(prev, p, it.snap) + Leg(p, end, it.snap),
+            )
+        }
+        routeLeg(k)
+        routeLeg(k + 1)
+    }
+
     fun undo() {
         val s = _state.value
+        if (s.lockB && s.waypoints.size > 2) {
+            // Remove the last free point before the fixed end; reconnect to the end.
+            val end = s.waypoints.last()
+            val before = s.waypoints[s.waypoints.size - 3]
+            legJobs.remove(s.legs.lastIndex)?.cancel()
+            legJobs.remove(s.legs.lastIndex - 1)?.cancel()
+            _state.update { it.copy(waypoints = it.waypoints.dropLast(2) + end, legs = it.legs.dropLast(2) + Leg(before, end, it.snap)) }
+            routeLeg(_state.value.legs.lastIndex)
+            return
+        }
+        if ((s.lockA && s.waypoints.size <= 1) || (s.lockB && s.waypoints.size <= 2)) return
         if (s.waypoints.isEmpty()) return
         legJobs.remove(s.legs.lastIndex)?.cancel()
         _state.update { it.copy(waypoints = it.waypoints.dropLast(1), legs = it.legs.dropLast(1)) }
     }
 
     fun clear() {
+        val s = _state.value
+        if (s.lockA && s.lockB && s.mode == EditMode.Streets && s.waypoints.size >= 2) {
+            // Keep the fixed start and end; drop everything in between.
+            legJobs.values.forEach { it.cancel() }
+            legJobs.clear()
+            val a = s.waypoints.first()
+            val b = s.waypoints.last()
+            _state.update { it.copy(waypoints = listOf(a, b), legs = listOf(Leg(a, b, it.snap))) }
+            routeLeg(0)
+            return
+        }
         legJobs.values.forEach { it.cancel() }
         legJobs.clear()
         _state.update {
-            if (it.mode == EditMode.PointToPoint) it.copy(b = null, p2pResult = null)
-            else it.copy(waypoints = emptyList(), legs = emptyList())
+            when {
+                it.mode == EditMode.PointToPoint -> if (it.lockB) it else it.copy(b = null, p2pResult = null)
+                it.lockA -> it.copy(waypoints = it.waypoints.take(1), legs = emptyList())
+                else -> it.copy(waypoints = emptyList(), legs = emptyList())
+            }
         }
     }
 

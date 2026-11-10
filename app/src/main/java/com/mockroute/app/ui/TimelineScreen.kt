@@ -94,10 +94,16 @@ fun TimelineScreen(vm: MainViewModel, onBack: () -> Unit, onEditOnMap: () -> Uni
             // First A.
             Card {
                 Column(Modifier.padding(12.dp)) {
-                    Text("Start (first A)", style = MaterialTheme.typography.titleSmall)
+                    Text("Start point A", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        if (t.anchorIsRealLocation) "Your real location (captured before mocking)" else "Custom point (moved on the map)",
+                        if (t.anchorIsRealLocation) "Your real location (captured before mocking)" else "Custom point",
                         style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        "Only the first point (A) and the last point are movable. Points shared by two steps are fixed: " +
+                            "to change one, delete the steps after it.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = tc::anchorToRealLocation) { Text("Use my location") }
@@ -109,51 +115,43 @@ fun TimelineScreen(vm: MainViewModel, onBack: () -> Unit, onEditOnMap: () -> Uni
                 }
             }
 
-            // Segment cards (long-press + drag to reorder; arrows as a fallback).
-            var cardHeight by remember { mutableIntStateOf(1) }
+            // Step cards. Order is fixed (each step depends on the previous one's end point).
             t.segments.forEachIndexed { i, seg ->
-                var dragY by remember(seg.id) { mutableFloatStateOf(0f) }
                 SegmentCard(
                     i, seg, t, plan, stale, issues.filter { it.segment == i },
-                    modifier = Modifier
-                        .onSizeChanged { cardHeight = it.height.coerceAtLeast(1) }
-                        .offset { IntOffset(0, dragY.roundToInt()) }
-                        .pointerInput(seg.id, t.size) {
-                            detectDragGesturesAfterLongPress(
-                                onDrag = { change, d ->
-                                    change.consume()
-                                    dragY += d.y
-                                },
-                                onDragEnd = {
-                                    val to = (i + (dragY / cardHeight).roundToInt()).coerceIn(0, t.size - 1)
-                                    dragY = 0f
-                                    if (to != i) tc.move(i, to)
-                                },
-                                onDragCancel = { dragY = 0f },
-                            )
-                        },
+                    modifier = Modifier,
                     onEdit = {
                         if (seg is Segment.Pause) pauseEditing = i else {
                             vm.editSegment(i)
                             onEditOnMap()
                         }
                     },
-                    onUp = { if (i > 0) tc.move(i, i - 1) },
-                    onDown = { if (i < t.size - 1) tc.move(i, i + 1) },
-                    onDelete = { tc.remove(i) },
+                    onDelete = when (i) {
+                        t.size - 1 -> tc::removeLast
+                        0 -> tc::removeFirst
+                        else -> null
+                    },
                     onReroll = { tc.reroll(i) },
+                    onResetAuto = { tc.resetToAuto(i) },
                     onPlayFrom = { vm.playTimeline(i) },
                     onSnap = tc::fixSnap,
                     onConnector = tc::fixConnector,
                 )
             }
 
-            Text("Add", style = MaterialTheme.typography.titleSmall)
+            Text("Add a step at the end (from ${com.mockroute.core.timeline.Timeline.pointLabel(t.size)})", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { tc.add(SegmentKind.Route) }) { Text("+ Route") }
                 OutlinedButton(onClick = { tc.add(SegmentKind.Indoor) }) { Text("+ Indoor") }
                 OutlinedButton(onClick = { tc.add(SegmentKind.Street) }) { Text("+ Street") }
                 OutlinedButton(onClick = { tc.add(SegmentKind.Pause) }) { Text("+ Pause") }
+            }
+            if (t.size > 0) {
+                Text("…or before the first step (ending at A)", style = MaterialTheme.typography.labelMedium)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { tc.addAtStart(SegmentKind.Route) }) { Text("+ Route at start") }
+                    TextButton(onClick = { tc.addAtStart(SegmentKind.Pause) }) { Text("+ Pause at start") }
+                }
             }
 
             when (val ps = planState) {
@@ -253,10 +251,9 @@ private fun SegmentCard(
     issues: List<Issue>,
     modifier: Modifier,
     onEdit: () -> Unit,
-    onUp: () -> Unit,
-    onDown: () -> Unit,
-    onDelete: () -> Unit,
+    onDelete: (() -> Unit)?,
     onReroll: () -> Unit,
+    onResetAuto: () -> Unit,
     onPlayFrom: () -> Unit,
     onSnap: (Issue) -> Unit,
     onConnector: (Issue) -> Unit,
@@ -270,10 +267,10 @@ private fun SegmentCard(
     }
     Card(modifier.fillMaxWidth(), colors = CardDefaults.cardColors()) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            val from = com.mockroute.core.timeline.Timeline.pointLabel(i)
+            val to = com.mockroute.core.timeline.Timeline.pointLabel(i + 1)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("$icon  ${i + 1}. $title", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                TextButton(onClick = onUp, enabled = i > 0) { Text("↑") }
-                TextButton(onClick = onDown, enabled = i < t.size - 1) { Text("↓") }
+                Text("$icon  $from → $to · $title", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             }
             val info = when {
                 p != null && p.error == null && plan != null -> {
@@ -287,12 +284,33 @@ private fun SegmentCard(
             }
             Text(info, style = MaterialTheme.typography.bodySmall, color = if (p?.error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
             p?.warning?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+            // Where the speed & time come from.
+            val custom = when (seg) {
+                is Segment.Route -> seg.settings != null
+                is Segment.IndoorZone -> seg.settings != null
+                is Segment.StreetZone -> seg.settings != null
+                is Segment.Pause -> false
+            }
+            if (seg !is Segment.Pause) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (custom) "Speed & time: custom" else "Speed & time: automatic" + (p?.settingsSource?.let { " ($it)" } ?: ""),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (custom) TextButton(onClick = onResetAuto) { Text("Reset to automatic") }
+                }
+            }
             for (issue in issues) {
-                Text(issueText(issue), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                Text(issueText(issue, from, to), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 if (issue.kind == IssueKind.NotOnEdge || issue.kind == IssueKind.NotInside) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { onSnap(issue) }) { Text("Snap to edge") }
-                        TextButton(onClick = { onConnector(issue) }) { Text("Insert connector route") }
+                        if (t.canSnap(issue)) TextButton(onClick = { onSnap(issue) }) { Text("Snap to edge") }
+                        if (t.canInsertConnector(issue)) TextButton(onClick = { onConnector(issue) }) { Text("Add connector route") }
+                    }
+                    if (!t.canSnap(issue) && !t.canInsertConnector(issue)) {
+                        Text("That point is fixed: edit the zone's shape so it touches it, or delete the steps after it.", style = MaterialTheme.typography.labelSmall)
                     }
                 }
             }
@@ -300,18 +318,17 @@ private fun SegmentCard(
                 TextButton(onClick = onEdit) { Text("Edit") }
                 TextButton(onClick = onReroll) { Text("Re-roll") }
                 TextButton(onClick = onPlayFrom, enabled = plan?.playable == true && !stale) { Text("Play from here") }
-                TextButton(onClick = onDelete) { Text("Delete") }
+                if (onDelete != null) TextButton(onClick = onDelete) { Text("Delete") }
             }
-            Text("Long-press and drag to reorder", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
         }
     }
 }
 
-private fun issueText(i: Issue): String = when (i.kind) {
-    IssueKind.RouteIncomplete -> "Set this route's end point B (Edit)."
+private fun issueText(i: Issue, from: String, to: String): String = when (i.kind) {
+    IssueKind.RouteIncomplete -> "Set this route's end point $to (Edit)."
     IssueKind.ZoneIncomplete -> "Draw and close this zone's shape (Edit)."
-    IssueKind.NotOnEdge -> "${if (i.which == Issue.End.Start) "Entry A" else "Exit B"} isn't on the indoor zone's edge."
-    IssueKind.NotInside -> "${if (i.which == Issue.End.Start) "Start A" else "End B"} is outside the street zone."
+    IssueKind.NotOnEdge -> "Point ${if (i.which == Issue.End.Start) from else to} isn't on the indoor zone's edge."
+    IssueKind.NotInside -> "Point ${if (i.which == Issue.End.Start) from else to} is outside the street zone."
 }
 
 @Composable
