@@ -9,7 +9,9 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.mockroute.core.plan.SegmentPlanSettings
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.json.Json
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -50,6 +52,7 @@ class SettingsRepository(private val context: Context) {
         val routingProvider = stringPreferencesKey("routing_provider")
         val orsKey = stringPreferencesKey("ors_api_key")
         val ghKey = stringPreferencesKey("graphhopper_api_key")
+        val segmentPlan = stringPreferencesKey("segment_plan_v1")
     }
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { it.toSettings() }
@@ -67,6 +70,17 @@ class SettingsRepository(private val context: Context) {
     suspend fun setOrsApiKey(key: String) = context.dataStore.edit { it[Keys.orsKey] = key.trim() }
 
     suspend fun setGraphHopperApiKey(key: String) = context.dataStore.edit { it[Keys.ghKey] = key.trim() }
+
+    /** Stage 3: speed/time/acceleration settings of the current ROUTE segment (JSON, kotlinx.serialization). */
+    val segmentPlan: Flow<SegmentPlanSettings?> = context.dataStore.data.map { prefs ->
+        prefs[Keys.segmentPlan]?.let { runCatching { planJson.decodeFromString(SegmentPlanSettings.serializer(), it) }.getOrNull() }
+    }
+
+    suspend fun setSegmentPlan(plan: SegmentPlanSettings) = context.dataStore.edit {
+        it[Keys.segmentPlan] = planJson.encodeToString(SegmentPlanSettings.serializer(), plan)
+    }
+
+    private val planJson = Json { ignoreUnknownKeys = true }
 
     suspend fun setLastRealLocation(fix: RealFix) = context.dataStore.edit {
         it[Keys.realLat] = fix.lat

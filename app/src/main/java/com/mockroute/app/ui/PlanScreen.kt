@@ -1,0 +1,298 @@
+package com.mockroute.app.ui
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RangeSlider
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mockroute.core.dist.BoundedGamma
+import com.mockroute.core.plan.AccelerationPreset
+import com.mockroute.core.plan.CenterKind
+import com.mockroute.core.plan.CoupledSliders
+import com.mockroute.core.plan.Feasibility
+import com.mockroute.core.plan.GammaSetting
+import com.mockroute.core.plan.SegmentPlanSettings
+import java.util.Locale
+import kotlin.math.ceil
+import kotlin.math.roundToInt
+
+private const val KMH = 3.6
+
+private fun fmtKmh(mps: Double) = String.format(Locale.US, "%.1f km/h", mps * KMH)
+
+/** h:mm (UI convention for times). */
+internal fun fmtHmm(seconds: Double): String {
+    if (!seconds.isFinite()) return "∞"
+    val m = ceil(seconds / 60.0 - 1e-9).toLong().coerceAtLeast(0)
+    return String.format(Locale.US, "%d:%02d", m / 60, m % 60)
+}
+
+@Composable
+fun PlanScreen(vm: MainViewModel, onBack: () -> Unit) {
+    val plan by vm.plan.collectAsStateWithLifecycle()
+    val editor by vm.editor.state.collectAsStateWithLifecycle()
+    val p = plan ?: return
+    val d = editor.result?.geometry?.lengthM ?: 0.0
+
+    Scaffold { padding ->
+        Column(
+            Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Speed & time", style = MaterialTheme.typography.headlineSmall)
+                    Text(
+                        "Segment: ${formatDistance(d)} · ${editor.profile.label}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                OutlinedButton(onClick = onBack) { Text("Done") }
+            }
+
+            FeasibilityBanner(d, p, onApply = vm::applyCoupled)
+
+            GammaCard(
+                title = "Speed",
+                setting = p.speed,
+                rangeMax = CoupledSliders.V_CAP,
+                toUi = { it * KMH },
+                fromUi = { it / KMH },
+                uiStep = 1.0,
+                format = ::fmtKmh,
+                onChange = { s -> vm.updatePlan { it.copy(speed = s) } },
+            )
+            GammaCard(
+                title = "Time",
+                setting = p.time,
+                rangeMax = CoupledSliders.T_CAP,
+                toUi = { it / 60.0 },
+                fromUi = { it * 60.0 },
+                uiStep = 1.0,
+                format = ::fmtHmm,
+                onChange = { s -> vm.updatePlan { it.copy(time = s) } },
+            )
+            AccelerationCard(p, editor.profile, onChange = { a, preset ->
+                vm.updatePlan { it.copy(aMaxMps2 = a, accelPreset = preset) }
+            })
+            TextButton(onClick = vm::resetPlan) { Text("Reset to ${editor.profile.label} defaults") }
+        }
+    }
+}
+
+@Composable
+private fun FeasibilityBanner(d: Double, p: SegmentPlanSettings, onApply: (CoupledSliders) -> Unit) {
+    val result = remember(d, p) { p.feasibility(d) }
+    val ok = result.feasible
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = if (ok) Color(0xFFE6F4EA) else Color(0xFFFCE8E6),
+            contentColor = Color(0xFF202124),
+        ),
+    ) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (ok) {
+                Text("Feasible ✓", style = MaterialTheme.typography.titleMedium, color = Color(0xFF137333))
+                Text("Needs ≥ ${fmtKmh(result.requiredAverageMps)} average to arrive by ${fmtHmm(p.tMax)}.")
+                Text(
+                    "Fastest possible at ${fmtKmh(p.vMax)} with a = ${"%.1f".format(Locale.US, p.aMaxMps2)} m/s²: " +
+                        fmtHmm(result.tMinPhysS),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            } else {
+                Text("Not feasible", style = MaterialTheme.typography.titleMedium, color = Color(0xFFC5221F))
+                result.issues.forEach { Text("• " + issueText(it, d, p, result)) }
+                if (Feasibility.Issue.TooSlow in result.issues || Feasibility.Issue.NoSpeed in result.issues) {
+                    CoupledPanel(d, p, onApply)
+                }
+            }
+        }
+    }
+}
+
+private fun issueText(i: Feasibility.Issue, d: Double, p: SegmentPlanSettings, r: Feasibility.Result): String = when (i) {
+    Feasibility.Issue.TooSlow ->
+        "At most ${fmtKmh(p.vMax)} (a = ${"%.1f".format(Locale.US, p.aMaxMps2)} m/s²) the fastest time is " +
+            "${fmtHmm(r.tMinPhysS)}, longer than t_max ${fmtHmm(p.tMax)}."
+    Feasibility.Issue.TooShort ->
+        "Too short: at least ${fmtKmh(p.vMin)} for at least ${fmtHmm(p.tMin)} covers " +
+            "${formatDistance(p.vMin * p.tMin)} > ${formatDistance(d)}. Lower v_min or t_min."
+    Feasibility.Issue.TimeRangeInverted -> "t_min is above t_max."
+    Feasibility.Issue.SpeedRangeInverted -> "v_min is above v_max."
+    Feasibility.Issue.NoSpeed -> "v_max is 0."
+}
+
+/** The linked (v_max, t_max) sliders. Default proposal: keep v_max, raise t_max (rounded up to the minute). */
+@Composable
+private fun CoupledPanel(d: Double, p: SegmentPlanSettings, onApply: (CoupledSliders) -> Unit) {
+    var c by remember(d, p.aMaxMps2, p.vMax, p.tMax) {
+        mutableStateOf(CoupledSliders.propose(d, p.aMaxMps2, p.vMax.coerceAtLeast(0.1), p.tMax))
+    }
+    if (c.tooLongForCaps) {
+        Text(
+            "Route too long for the caps: even 100 km/h for 6:00 isn't enough. Shorten the segment.",
+            color = Color(0xFFC5221F),
+        )
+        return
+    }
+    Text("Fix it (lowering one raises the other):", style = MaterialTheme.typography.labelLarge)
+    Text("v_max ${fmtKmh(c.vMax)}")
+    Slider(
+        value = (c.vMax * KMH).toFloat(),
+        onValueChange = { c = c.withVMax(it.roundToInt() / KMH) },
+        valueRange = 0f..100f,
+    )
+    Text("t_max ${fmtHmm(c.tMax)}")
+    Slider(
+        value = (c.tMax / 60.0).toFloat(),
+        onValueChange = { c = c.withTMax(it.roundToInt() * 60.0) },
+        valueRange = 0f..360f,
+    )
+    Button(onClick = { onApply(c) }) { Text("Apply ${fmtKmh(c.vMax)} / ${fmtHmm(c.tMax)}") }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun GammaCard(
+    title: String,
+    setting: GammaSetting,
+    rangeMax: Double,
+    toUi: (Double) -> Double,
+    fromUi: (Double) -> Double,
+    uiStep: Double,
+    format: (Double) -> String,
+    onChange: (GammaSetting) -> Unit,
+) {
+    val dist: BoundedGamma = remember(setting) { setting.distribution() }
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text("Range ${format(setting.lo)} – ${format(setting.hi)}", style = MaterialTheme.typography.bodyMedium)
+            RangeSlider(
+                value = toUi(setting.lo).toFloat()..toUi(setting.hi).toFloat(),
+                onValueChange = { r ->
+                    val lo = fromUi((r.start / uiStep).roundToInt() * uiStep)
+                    val hi = fromUi((r.endInclusive / uiStep).roundToInt() * uiStep)
+                    onChange(setting.withRange(lo, hi))
+                },
+                valueRange = 0f..toUi(rangeMax).toFloat(),
+            )
+            SingleChoiceSegmentedButtonRow {
+                CenterKind.entries.forEachIndexed { i, k ->
+                    SegmentedButton(
+                        selected = setting.centerKind == k,
+                        onClick = { onChange(setting.copy(centerKind = k)) },
+                        shape = SegmentedButtonDefaults.itemShape(i, CenterKind.entries.size),
+                        icon = {},
+                    ) { Text(k.name) }
+                }
+            }
+            if (setting.hi > setting.lo) {
+                Text("${setting.centerKind.name}: ${format(setting.center)}", style = MaterialTheme.typography.bodyMedium)
+                Slider(
+                    value = setting.center.toFloat(),
+                    onValueChange = { onChange(setting.copy(center = it.toDouble())) },
+                    valueRange = setting.lo.toFloat()..setting.hi.toFloat(),
+                )
+                Text(String.format(Locale.US, "Shape k: %.1f (higher = narrower)", setting.shape), style = MaterialTheme.typography.bodyMedium)
+                Slider(
+                    value = setting.shape.toFloat(),
+                    onValueChange = { onChange(setting.copy(shape = (it * 2).roundToInt() / 2.0)) },
+                    valueRange = BoundedGamma.MIN_SHAPE.toFloat()..BoundedGamma.MAX_SHAPE.toFloat(),
+                )
+                val wanted = setting.center
+                val achieved = if (setting.centerKind == CenterKind.Mean || setting.shape <= 1.0) dist.mean else dist.mode
+                if (kotlin.math.abs(achieved - wanted) > 1e-3 * (setting.hi - setting.lo)) {
+                    Text(
+                        "With shape ${"%.1f".format(Locale.US, setting.shape)} the ${setting.centerKind.name.lowercase()} " +
+                            "can reach at most ${format(achieved)}: raise the shape or widen the range.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+                if (setting.centerKind == CenterKind.Mode && setting.shape <= 1.0) {
+                    Text("Mode needs shape > 1; using the mean.", style = MaterialTheme.typography.bodySmall)
+                }
+            } else {
+                Text("Fixed at ${format(setting.lo)} (range has zero width).", style = MaterialTheme.typography.bodySmall)
+            }
+            GammaChart(dist, format, Modifier.fillMaxWidth().padding(top = 8.dp))
+        }
+    }
+}
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun AccelerationCard(
+    p: SegmentPlanSettings,
+    profile: com.mockroute.core.route.RoutingProfile,
+    onChange: (Double, AccelerationPreset?) -> Unit,
+) {
+    var text by rememberSaveable { mutableStateOf(String.format(Locale.US, "%.2f", p.aMaxMps2)) }
+    // Follow outside changes (preset chips, profile switch) without fighting the user's typing.
+    LaunchedEffect(p.aMaxMps2) {
+        if (text.replace(',', '.').toDoubleOrNull() != p.aMaxMps2) text = String.format(Locale.US, "%.2f", p.aMaxMps2)
+    }
+    Card {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Acceleration a_max", style = MaterialTheme.typography.titleMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                val presets = AccelerationPreset.forProfile(profile) +
+                    AccelerationPreset.entries.filter { it !in AccelerationPreset.forProfile(profile) }
+                presets.forEach { preset ->
+                    FilterChip(
+                        selected = p.accelPreset == preset,
+                        onClick = { onChange(preset.aMps2, preset) },
+                        label = { Text("${preset.label} ${preset.aMps2}") },
+                    )
+                }
+            }
+            p.accelPreset?.let { Text(it.note, style = MaterialTheme.typography.bodySmall) }
+            OutlinedTextField(
+                value = text,
+                onValueChange = { t ->
+                    text = t
+                    t.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 && it.isFinite() }?.let { onChange(it, null) }
+                },
+                label = { Text("a_max (m/s², > 0, no upper cap)") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}

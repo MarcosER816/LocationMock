@@ -81,13 +81,14 @@ private val FallbackGrey = Color(0xFF757575)
 private val HandleGreen = Color(0xFF1E8E3E)
 
 @Composable
-fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
+fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val sim by vm.simulation.collectAsStateWithLifecycle()
     val selected by vm.selected.collectAsStateWithLifecycle()
     val capturing by vm.capturing.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val editor by vm.editor.state.collectAsStateWithLifecycle()
+    val plan by vm.plan.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val editing = editor.mode != EditMode.Explore
 
@@ -329,6 +330,8 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit) {
                     onSpeed = vm.editor::setPlaySpeed,
                     onPlay = vm::playRoute,
                     onRetry = vm.editor::refresh,
+                    plan = plan,
+                    onOpenPlan = onOpenPlan,
                 )
             }
             selected?.takeIf { !editing }?.let { p ->

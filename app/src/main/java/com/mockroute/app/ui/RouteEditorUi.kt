@@ -98,6 +98,8 @@ fun SegmentSheet(
     onSpeed: (Double) -> Unit,
     onPlay: () -> Unit,
     onRetry: () -> Unit,
+    plan: com.mockroute.core.plan.SegmentPlanSettings?,
+    onOpenPlan: () -> Unit,
 ) {
     val result = state.result
     Card(
@@ -161,6 +163,25 @@ fun SegmentSheet(
                 EditMode.Explore -> Unit
             }
 
+            // Stage 3: speed/time distributions + feasibility.
+            if (result != null && result.geometry.size >= 2) {
+                val d = result.geometry.lengthM
+                val feas = plan?.feasibility(d)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        when {
+                            plan == null || feas == null -> "Speed & time not set"
+                            feas.feasible -> "✓ ${fmtSpeedRange(plan)} · ${fmtHmm(plan.tMin)}–${fmtHmm(plan.tMax)}"
+                            else -> "✗ Not feasible — tap to fix"
+                        },
+                        Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (feas?.feasible == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                    )
+                    OutlinedButton(onClick = onOpenPlan) { Text("Speed & time…") }
+                }
+            }
+
             // Temporary constant-speed playback.
             if (result != null && result.geometry.size >= 2) {
                 Text(
@@ -180,6 +201,9 @@ fun SegmentSheet(
         }
     }
 }
+
+private fun fmtSpeedRange(p: com.mockroute.core.plan.SegmentPlanSettings) =
+    String.format(Locale.US, "%.0f–%.0f km/h", p.vMin * 3.6, p.vMax * 3.6)
 
 private fun hint(s: RouteEditorState): String = when (s.mode) {
     EditMode.PointToPoint -> when {

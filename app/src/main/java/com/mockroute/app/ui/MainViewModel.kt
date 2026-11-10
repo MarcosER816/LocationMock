@@ -19,12 +19,16 @@ import com.mockroute.app.sim.SimulationRepository
 import com.mockroute.app.sim.SimulationState
 import com.mockroute.app.sim.TrajectorySpec
 import com.mockroute.core.geo.LatLon
+import com.mockroute.core.plan.AccelerationPreset
+import com.mockroute.core.plan.CoupledSliders
+import com.mockroute.core.plan.SegmentPlanSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -86,6 +90,49 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     fun setRoutingProvider(id: String) = viewModelScope.launch { repo.setRoutingProvider(id) }
     fun setOrsKey(key: String) = viewModelScope.launch { repo.setOrsApiKey(key) }
     fun setGraphHopperKey(key: String) = viewModelScope.launch { repo.setGraphHopperApiKey(key) }
+    // ---- Stage 3: speed / time / acceleration plan for the current segment --------------------------
+
+    private val _plan = MutableStateFlow<SegmentPlanSettings?>(null)
+    val plan: StateFlow<SegmentPlanSettings?> = _plan.asStateFlow()
+
+    /** Length of the segment being planned (the geometry that will actually be played). */
+    fun segmentDistance(): Double? = editor.state.value.result?.geometry?.lengthM
+
+    fun updatePlan(transform: (SegmentPlanSettings) -> SegmentPlanSettings) {
+        val cur = _plan.value ?: defaultPlan()
+        _plan.value = transform(cur)
+    }
+
+    fun resetPlan() {
+        _plan.value = defaultPlan()
+    }
+
+    fun applyCoupled(c: CoupledSliders) = updatePlan { it.applyCoupled(c) }
+
+    private fun defaultPlan() = SegmentPlanSettings.defaults(editor.state.value.profile, segmentDistance() ?: 1000.0)
+
+    private fun initPlan() {
+        viewModelScope.launch {
+            _plan.value = repo.segmentPlan.first() // may be null → defaults on first open
+            // Persist edits, debounced (sliders emit many values).
+            _plan.filterNotNull().drop(1).debounce(500).collect { repo.setSegmentPlan(it) }
+        }
+        // Switching Walk/Car/Bus picks that profile's default acceleration preset.
+        viewModelScope.launch {
+            editor.state.map { it.profile }.distinctUntilChanged().drop(1).collect { p ->
+                if (_plan.value != null) {
+                    val preset = AccelerationPreset.defaultFor(p)
+                    updatePlan { it.copy(aMaxMps2 = preset.aMps2, accelPreset = preset) }
+                }
+            }
+        }
+    }
+
+    /** Ensures a plan exists before the plan screen opens. */
+    fun ensurePlan() {
+        if (_plan.value == null) _plan.value = defaultPlan()
+    }
+
     private val _routingTest = MutableStateFlow<String?>(null)
     val routingTest: StateFlow<String?> = _routingTest.asStateFlow()
 
@@ -116,6 +163,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        initPlan()
         // Re-route fallback routes as soon as the provider or an API key changes (no need to re-open screens).
         viewModelScope.launch {
             settings.filterNotNull()

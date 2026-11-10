@@ -20,7 +20,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mockroute.app.setup.SetupIntents
 
-private enum class Screen { Map, Wizard, Settings }
+private enum class Screen { Map, Wizard, Settings, Plan }
 
 @Composable
 fun AppRoot(vm: MainViewModel = viewModel()) {
@@ -48,7 +48,14 @@ fun AppRoot(vm: MainViewModel = viewModel()) {
             BackHandler { screen = Screen.Map }
             SettingsScreen(vm, onBack = { screen = Screen.Map }, onCheckSetup = { screen = Screen.Wizard })
         }
-        Screen.Map -> MapScreen(vm, onOpenSettings = { screen = Screen.Settings })
+        Screen.Plan -> {
+            BackHandler { screen = Screen.Map }
+            PlanScreen(vm, onBack = { screen = Screen.Map })
+        }
+        Screen.Map -> MapScreen(vm, onOpenSettings = { screen = Screen.Settings }, onOpenPlan = {
+            vm.ensurePlan()
+            screen = Screen.Plan
+        })
         null -> Unit
     }
 
