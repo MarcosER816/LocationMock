@@ -170,26 +170,27 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
         ClickResult.Consume
     }
 
-    Box(
-        Modifier
-            .fillMaxSize()
-            .endpointDrag(
-                enabled = editor.mode == EditMode.PointToPoint,
-                cameraState = cameraState,
-                a = editor.a,
-                b = editor.b,
-                onPreview = { dragPreview = it },
-                onMoved = { which, p -> vm.editor.setEndpoint(which, p) },
-            )
-            .mapHandlesDrag(
-                enabled = indoor,
-                cameraState = cameraState,
-                handles = zoneHandles(zoneState),
-                onDrag = vm.zone::drag,
-            ),
-    ) {
+    Box(Modifier.fillMaxSize()) {
         MaplibreMap(
-            modifier = Modifier.fillMaxSize(),
+            // Drag gestures live on the MAP (not the Box): the Box also holds the sheets, and a tap on a sheet
+            // button near a projected corner must not be swallowed as a drag.
+            modifier = Modifier
+                .fillMaxSize()
+                .endpointDrag(
+                    enabled = editor.mode == EditMode.PointToPoint,
+                    cameraState = cameraState,
+                    a = editor.a,
+                    b = editor.b,
+                    onPreview = { dragPreview = it },
+                    onMoved = { which, p -> vm.editor.setEndpoint(which, p) },
+                )
+                .mapHandlesDrag(
+                    enabled = indoor,
+                    cameraState = cameraState,
+                    handles = zoneHandles(zoneState),
+                    onDrag = vm.zone::drag,
+                    onTap = { id -> vm.zone.onHandleTap(id)?.let(vm::showMessage) },
+                ),
             baseStyle = BaseStyle.Uri(TileStyle.chain[styleIndex]),
             cameraState = cameraState,
             // MaplibreMap (0.14) remembers its callbacks from the FIRST composition and never updates them, so

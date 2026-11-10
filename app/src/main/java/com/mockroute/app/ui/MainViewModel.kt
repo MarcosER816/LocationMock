@@ -269,6 +269,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _selected.value = point
     }
 
+    fun showMessage(text: String) {
+        _message.value = text
+    }
+
     fun consumeMessage() {
         _message.value = null
     }

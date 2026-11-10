@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 6 (indoor zone + Gaussian-mixture 3D editor) — 0.6.0 built, CI; awaiting phone test. Stages 1–5 verified on device._
+_Last updated: 2026-11-10 — Stage 6 (indoor zone + Gaussian-mixture 3D editor) — 0.6.1 (close-shape fix) pending phone re-test. Stages 1–5 verified on device._
 
 ## Done
 ### Stage 6 — INDOOR zone + Gaussian-mixture editor (0.6.0)
@@ -219,6 +219,20 @@ optional API-key secrets → BuildConfig.
   "5 request(s), 0 from cache · approximate path (corridor) · 3 congestion point(s) marked". The 5 requests are
   1 failed exact attempt + 4 bins. Possible optimisation: if exact keeps failing on ORS-traced routes, try
   Corridor first (saves 1 request per fresh analysis).
+
+## 0.6.1 — "it doesn't let me close the shape" (phone report 2026-11-10)
+- **Root cause:** `ZoneEditorState.problem` was `frame?.let { validate(…) } ?: TooFewVertices`. A **valid** outline
+  (validate → null) fell through the elvis, so the app said "needs at least 3 corners" with 7+ corners and kept
+  Close disabled. Fixed with an explicit `if`. **Lesson: never put `?:` after a `let` whose own result may
+  legitimately be null.**
+- Hardening found on the way:
+  - `Polygon2.clean()` drops near-duplicate consecutive corners (< 5 cm, e.g. a double tap), which otherwise made
+    neighbouring edges "touch" and read as self-intersecting.
+  - Taps within 1.5 m of the previous corner are ignored. A tap on an existing corner no longer adds one;
+    **tapping the first corner closes the shape**.
+  - **Close shape** is always enabled and explains why if it can't close.
+  - The drag gestures (`endpointDrag`, `mapHandlesDrag`) moved from the Box onto the **MaplibreMap modifier**, so
+    taps on sheet buttons near a projected corner are no longer swallowed.
 
 ## Stage 6 API (zone, `:core` package `zone`)
 - `Vec2`, `LocalFrame(origin)` (equirectangular local metres, exact inverse).

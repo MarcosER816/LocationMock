@@ -75,7 +75,8 @@ fun ZoneSheet(
                 ZoneTool.Draw -> {
                     Text(
                         if (def.closed) "Shape closed (${area(state)}). Drag corners to adjust, or reopen to add corners."
-                        else "Tap the map to add corners (${def.vertices.size}). Drag a corner to move it.",
+                        else "Tap the map to add corners (${def.vertices.size}). Drag a corner to move it. " +
+                            "Tap the first corner (or Close shape) to finish.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     state.problem?.takeIf { def.vertices.size >= 3 }?.let {
@@ -92,7 +93,7 @@ fun ZoneSheet(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (!def.closed) {
                             OutlinedButton(onClick = z::undoVertex, enabled = def.vertices.isNotEmpty()) { Text("Undo") }
-                            Button(onClick = z::close, enabled = state.problem == null) { Text("Close shape") }
+                            Button(onClick = { z.close()?.let(vm::showMessage) }) { Text("Close shape") }
                         } else {
                             OutlinedButton(onClick = z::reopen) { Text("Reopen") }
                         }

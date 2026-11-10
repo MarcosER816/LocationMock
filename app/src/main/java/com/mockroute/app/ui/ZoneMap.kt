@@ -50,9 +50,11 @@ fun Modifier.mapHandlesDrag(
     cameraState: CameraState,
     handles: List<Pair<String, LatLon>>,
     onDrag: (String, LatLon) -> Unit,
+    onTap: (String) -> Unit = {},
 ): Modifier = if (!enabled) this else composed {
     val current by rememberUpdatedState(handles)
     val drag by rememberUpdatedState(onDrag)
+    val tap by rememberUpdatedState(onTap)
     pointerInput(cameraState) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -63,15 +65,21 @@ fun Modifier.mapHandlesDrag(
                 ?.takeIf { (it.second - down.position).getDistance() <= 36.dp.toPx() } ?: return@awaitEachGesture
             down.consume()
             val grab = hit.second - down.position
+            var moved = false
+            val slop = viewConfiguration.touchSlop
             while (true) {
                 val event = awaitPointerEvent(PointerEventPass.Initial)
                 event.changes.forEach { it.consume() }
                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
                 if (!change.pressed) break
+                if (!moved && (change.position - down.position).getDistance() < slop) continue
+                moved = true
                 val p = change.position + grab
                 val pos = projection.positionFromScreenLocation(DpOffset(p.x.toDp(), p.y.toDp()))
                 drag(hit.first, LatLon(pos.latitude.coerceIn(-85.0, 85.0), pos.longitude))
             }
+            // A tap on a handle (no drag) never falls through to the map, so it can't add a duplicate corner.
+            if (!moved) tap(hit.first)
         }
     }
 }

@@ -39,8 +39,10 @@ data class ZoneDefinition(
     /** Local frame anchored at the first vertex. */
     fun frame(): LocalFrame? = vertices.firstOrNull()?.let { LocalFrame(it) }
 
-    fun polygon(frame: LocalFrame): Polygon2? =
-        if (vertices.size >= 3 && Polygon2.validate(vertices.map(frame::toLocal)) == null) Polygon2(vertices.map(frame::toLocal)) else null
+    fun polygon(frame: LocalFrame): Polygon2? {
+        val local = vertices.map(frame::toLocal)
+        return if (Polygon2.validate(local) == null) Polygon2(local) else null
+    }
 
     fun mixture(frame: LocalFrame, polygon: Polygon2): GaussianMixture2D =
         if (components.isEmpty()) GaussianMixture2D.default(polygon)

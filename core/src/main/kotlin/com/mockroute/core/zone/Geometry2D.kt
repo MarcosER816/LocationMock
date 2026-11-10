@@ -46,8 +46,7 @@ class Polygon2(vertices: List<Vec2>) {
     val vertices: List<Vec2>
 
     init {
-        var v = vertices
-        if (v.size >= 2 && v.first().distanceTo(v.last()) < 1e-9) v = v.dropLast(1)
+        val v = clean(vertices)
         require(v.size >= 3) { "polygon needs ≥ 3 vertices" }
         this.vertices = if (signedArea(v) < 0) v.reversed() else v
     }
@@ -160,8 +159,21 @@ class Polygon2(vertices: List<Vec2>) {
 
         enum class Problem { TooFewVertices, TooSmall, SelfIntersecting }
 
+        /**
+         * Drops consecutive near-duplicate vertices (< [minSpacing] m, e.g. a double tap) and a closing vertex equal to
+         * the first. Without this, a duplicated corner makes its two neighbouring edges "touch" and the outline is
+         * wrongly reported as self-intersecting (phone report 2026-11-10: "it doesn't let me close the shape").
+         */
+        fun clean(vertices: List<Vec2>, minSpacing: Double = 0.05): List<Vec2> {
+            val out = ArrayList<Vec2>(vertices.size)
+            for (p in vertices) if (out.isEmpty() || out.last().distanceTo(p) >= minSpacing) out += p
+            while (out.size >= 2 && out.first().distanceTo(out.last()) < minSpacing) out.removeAt(out.size - 1)
+            return out
+        }
+
         /** Null if usable; otherwise why not. Rejects self-intersecting and tiny (< 4 m²) polygons. */
-        fun validate(v: List<Vec2>): Problem? {
+        fun validate(vertices: List<Vec2>): Problem? {
+            val v = clean(vertices)
             if (v.size < 3) return Problem.TooFewVertices
             val n = v.size
             for (i in 0 until n) {

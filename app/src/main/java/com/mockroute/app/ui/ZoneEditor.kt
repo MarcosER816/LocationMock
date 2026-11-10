@@ -21,7 +21,15 @@ data class ZoneEditorState(
     val selected: Int = 0,
 ) {
     val frame: LocalFrame? get() = def.frame()
-    val problem: Polygon2.Companion.Problem? get() = frame?.let { f -> Polygon2.validate(def.vertices.map(f::toLocal)) } ?: Polygon2.Companion.Problem.TooFewVertices
+    /**
+     * Why the outline can't be closed, or null if it can. (0.6.0 bug: written as `frame?.let { validate(…) } ?: TooFewVertices`,
+     * so a VALID shape — validate() == null — fell through the elvis and read "needs at least 3 corners".)
+     */
+    val problem: Polygon2.Companion.Problem?
+        get() {
+            val f = frame ?: return Polygon2.Companion.Problem.TooFewVertices
+            return Polygon2.validate(def.vertices.map(f::toLocal))
+        }
     val polygon: Polygon2? get() = frame?.let { def.polygon(it) }
 
     /** The mixture as stored components (materialises the default when the list is empty). */
@@ -36,6 +44,10 @@ data class ZoneEditorState(
 
 /** Polygon tool, entry/exit snapping and the Gaussian-mixture ("hotspots") editor for the INDOOR zone. */
 class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
+    companion object {
+        const val MIN_CORNER_SPACING_M = 1.5
+    }
+
     private val _state = MutableStateFlow(ZoneEditorState(initial, if (initial.closed) ZoneTool.Hotspots else ZoneTool.Draw))
     val state: StateFlow<ZoneEditorState> = _state.asStateFlow()
 
@@ -46,7 +58,12 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
     fun onMapTap(p: LatLon) {
         val s = _state.value
         when (s.tool) {
-            ZoneTool.Draw -> if (!s.def.closed) update { it.copy(vertices = it.vertices + p) }
+            ZoneTool.Draw -> if (!s.def.closed) {
+                // Ignore a tap on (≈ the same spot as) the previous corner: a double tap must not duplicate it.
+                val last = s.def.vertices.lastOrNull()
+                val tooClose = last != null && com.mockroute.core.geo.GeoMath.haversineMeters(last, p) < MIN_CORNER_SPACING_M
+                if (!tooClose) update { it.copy(vertices = it.vertices + p) }
+            }
             ZoneTool.Entry -> snap(p)?.let { q -> update { it.copy(entry = q) } }
             ZoneTool.Exit -> snap(p)?.let { q -> update { it.copy(exit = q) } }
             ZoneTool.Hotspots -> moveComponent(s.selected, p)
@@ -61,10 +78,23 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
         return ZonePlanner.snapToEdge(poly, f, p)
     }
 
+    /** A tap (not a drag) on a handle: the FIRST corner closes the shape; other corners do nothing. */
+    fun onHandleTap(id: String): String? {
+        val s = _state.value
+        if (id == "v0" && !s.def.closed && s.def.vertices.size >= 3) return close()
+        return null
+    }
+
     fun undoVertex() = update { if (it.closed) it else it.copy(vertices = it.vertices.dropLast(1)) }
 
-    fun close() {
-        if (_state.value.problem != null) return
+    /** Closes the shape; returns a user message if it can't be closed. */
+    fun close(): String? {
+        when (_state.value.problem) {
+            null -> Unit
+            Polygon2.Companion.Problem.TooFewVertices -> return "Add at least 3 corners first."
+            Polygon2.Companion.Problem.TooSmall -> return "The shape is too small (needs ≥ 4 m²)."
+            Polygon2.Companion.Problem.SelfIntersecting -> return "The outline crosses itself: drag a corner (or Undo) so the edges don't cross."
+        }
         update { it.copy(closed = true) }
         // Re-snap A/B to the new outline; materialise the default hotspot so it can be edited.
         val s = _state.value
@@ -78,6 +108,7 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
                 tool = if (it.def.entry == null) ZoneTool.Entry else ZoneTool.Hotspots,
             )
         }
+        return null
     }
 
     fun reopen() = _state.update { it.copy(def = it.def.copy(closed = false), tool = ZoneTool.Draw) }

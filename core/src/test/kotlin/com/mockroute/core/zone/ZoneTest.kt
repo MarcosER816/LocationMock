@@ -48,6 +48,10 @@ class ZoneTest {
         assertEquals(Polygon2.Companion.Problem.SelfIntersecting, Polygon2.validate(listOf(Vec2(0.0, 0.0), Vec2(10.0, 10.0), Vec2(10.0, 0.0), Vec2(0.0, 10.0))))
         assertEquals(Polygon2.Companion.Problem.TooSmall, Polygon2.validate(listOf(Vec2(0.0, 0.0), Vec2(1.0, 0.0), Vec2(0.0, 1.0))))
         assertEquals(Polygon2.Companion.Problem.TooFewVertices, Polygon2.validate(listOf(Vec2(0.0, 0.0), Vec2(1.0, 0.0))))
+        // A duplicated corner (double tap) is cleaned, not reported as self-intersecting.
+        val sq = listOf(Vec2(0.0, 0.0), Vec2(20.0, 0.0), Vec2(20.0, 0.0), Vec2(20.0, 20.0), Vec2(0.0, 20.0), Vec2(0.0, 0.0))
+        assertNull(Polygon2.validate(sq))
+        assertEquals(4, Polygon2(sq).size)
         // The only reflex vertex of the L is the inner corner (10,10).
         assertEquals(listOf(Vec2(10.0, 10.0)), room.vertices.indices.filter { room.isReflex(it) }.map { room.vertices[it] })
     }
