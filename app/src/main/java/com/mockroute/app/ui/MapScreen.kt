@@ -97,6 +97,11 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
     val planSeed by vm.planner.seed.collectAsStateWithLifecycle()
     val lockTime by vm.planner.lockTime.collectAsStateWithLifecycle()
     val trafficStatus by vm.traffic.status.collectAsStateWithLifecycle()
+    val zoneState by vm.zone.state.collectAsStateWithLifecycle()
+    val zoneStatus by vm.zonePlanner.status.collectAsStateWithLifecycle()
+    val zoneSeed by vm.zonePlanner.seed.collectAsStateWithLifecycle()
+    val zoneLock by vm.zonePlanner.lockTime.collectAsStateWithLifecycle()
+    val indoor = editor.mode == EditMode.Indoor
     val departure by vm.traffic.departure.collectAsStateWithLifecycle()
     // Tap on the plan line → speed & ETA at that point.
     var inspect by remember { mutableStateOf<PlanInspection?>(null) }
@@ -137,6 +142,10 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
         if (styleIndex < TileStyle.chain.lastIndex) styleIndex++
     }
     val currentOnClick by rememberUpdatedState { pos: Position, _: DpOffset ->
+        if (vm.editor.state.value.mode == EditMode.Indoor) {
+            vm.zone.onMapTap(LatLon(pos.latitude, pos.longitude))
+            return@rememberUpdatedState ClickResult.Consume
+        }
         val ready = vm.planner.status.value as? PlanStatus.Ready
         val hit = ready?.let { inspectPlan(it.generated, LatLon(pos.latitude, pos.longitude), cameraState.metersPerDpAtTarget * 20) }
         if (hit != null) {
@@ -153,6 +162,10 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
     }
     val currentOnLongClick by rememberUpdatedState { pos: Position, _: DpOffset ->
         val p = LatLon(pos.latitude, pos.longitude)
+        if (vm.editor.state.value.mode == EditMode.Indoor) {
+            vm.zone.onMapTap(p)
+            return@rememberUpdatedState ClickResult.Consume
+        }
         if (vm.editor.state.value.mode != EditMode.Explore) vm.editor.onMapTap(p) else vm.select(p)
         ClickResult.Consume
     }
@@ -167,6 +180,12 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 b = editor.b,
                 onPreview = { dragPreview = it },
                 onMoved = { which, p -> vm.editor.setEndpoint(which, p) },
+            )
+            .mapHandlesDrag(
+                enabled = indoor,
+                cameraState = cameraState,
+                handles = zoneHandles(zoneState),
+                onDrag = vm.zone::drag,
             ),
     ) {
         MaplibreMap(
@@ -180,6 +199,8 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             onMapClick = { pos, offset -> currentOnClick(pos, offset) },
             onMapLongClick = { pos, offset -> currentOnLongClick(pos, offset) },
         ) {
+            if (indoor) ZoneLayers(zoneState, zoneStatus)
+
             // Route being edited (simplified for display).
             val editedResult = editor.result
             val routeJson = remember(editedResult?.geometry) {
@@ -414,6 +435,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                         is TrajectorySpec.StraightLine -> sim.current?.let { GeoMath.haversineMeters(it.position, spec.to) }
                         is TrajectorySpec.Polyline -> (spec.geometry.lengthM - sim.elapsedSeconds * spec.speedMps).coerceAtLeast(0.0)
                         is TrajectorySpec.Plan -> (spec.plan.distanceM - spec.plan.stateAtTime(sim.elapsedSeconds).distanceM).coerceAtLeast(0.0)
+                        is TrajectorySpec.Zone -> (spec.zone.plan.distanceM - spec.zone.plan.stateAtTime(sim.elapsedSeconds).distanceM).coerceAtLeast(0.0)
                         else -> null
                     },
                     onPause = vm::pause,
@@ -421,7 +443,10 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     onStop = vm::stop,
                 )
             }
-            if (editing && !sim.isActive) {
+            if (indoor && !sim.isActive) {
+                ZoneSheet(vm, zoneState, zoneStatus, zoneSeed, zoneLock, onOpenPlan = onOpenPlan)
+            }
+            if (editing && !indoor && !sim.isActive) {
                 SegmentSheet(
                     state = editor,
                     onProfile = vm.editor::setProfile,
@@ -498,7 +523,7 @@ private fun inspectPlan(g: GeneratedPlan, tap: LatLon, thresholdM: Double): Plan
 }
 
 @Composable
-private fun EndpointLayers(id: String, point: LatLon?, label: String, color: Color) {
+internal fun EndpointLayers(id: String, point: LatLon?, label: String, color: Color) {
     val source = rememberGeoJsonSource(GeoJsonData.JsonString(pointJson(point)))
     CircleLayer(
         id = "endpoint-$id",

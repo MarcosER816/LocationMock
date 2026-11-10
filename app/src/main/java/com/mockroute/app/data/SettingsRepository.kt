@@ -60,6 +60,8 @@ class SettingsRepository(private val context: Context) {
         val orsKey = stringPreferencesKey("ors_api_key")
         val ghKey = stringPreferencesKey("graphhopper_api_key")
         val segmentPlan = stringPreferencesKey("segment_plan_v1")
+        val zoneDef = stringPreferencesKey("zone_def_v1")
+        val zonePlan = stringPreferencesKey("zone_plan_v1")
         val tomTomKey = stringPreferencesKey("tomtom_api_key")
         val googleKey = stringPreferencesKey("google_routes_api_key")
         val trafficDay = stringPreferencesKey("traffic_request_day")
@@ -92,6 +94,23 @@ class SettingsRepository(private val context: Context) {
     }
 
     private val planJson = Json { ignoreUnknownKeys = true }
+
+    /** Stage 6: the INDOOR zone and its speed/time settings. */
+    suspend fun zoneDefinition(): com.mockroute.core.zone.ZoneDefinition? = context.dataStore.data.first()[Keys.zoneDef]?.let {
+        runCatching { planJson.decodeFromString(com.mockroute.core.zone.ZoneDefinition.serializer(), it) }.getOrNull()
+    }
+
+    suspend fun setZoneDefinition(d: com.mockroute.core.zone.ZoneDefinition) = context.dataStore.edit {
+        it[Keys.zoneDef] = planJson.encodeToString(com.mockroute.core.zone.ZoneDefinition.serializer(), d)
+    }
+
+    suspend fun zonePlan(): SegmentPlanSettings? = context.dataStore.data.first()[Keys.zonePlan]?.let {
+        runCatching { planJson.decodeFromString(SegmentPlanSettings.serializer(), it) }.getOrNull()
+    }
+
+    suspend fun setZonePlan(p: SegmentPlanSettings) = context.dataStore.edit {
+        it[Keys.zonePlan] = planJson.encodeToString(SegmentPlanSettings.serializer(), p)
+    }
 
     suspend fun setTomTomApiKey(key: String) = context.dataStore.edit { it[Keys.tomTomKey] = key.trim() }
 

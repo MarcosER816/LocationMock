@@ -18,7 +18,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-enum class EditMode { Explore, PointToPoint, Streets }
+enum class EditMode { Explore, PointToPoint, Streets, Indoor }
 
 enum class Endpoint { A, B }
 
@@ -50,7 +50,7 @@ data class RouteEditorState(
     val result: RouteResult? get() = when (mode) {
         EditMode.PointToPoint -> p2pResult
         EditMode.Streets -> RouteResult.concat(legs.mapNotNull { it.result }, profile)
-        EditMode.Explore -> null
+        EditMode.Explore, EditMode.Indoor -> null
     }
 
     companion object {
@@ -131,7 +131,7 @@ class RouteEditor(
         when (_state.value.mode) {
             EditMode.PointToPoint -> setEndpoint(_state.value.pickTarget, p)
             EditMode.Streets -> addWaypoint(p)
-            EditMode.Explore -> Unit
+            EditMode.Explore, EditMode.Indoor -> Unit
         }
     }
 

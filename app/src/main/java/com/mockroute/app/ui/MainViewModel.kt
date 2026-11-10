@@ -152,6 +152,43 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return "cache: route $key · ${trafficCache.entryCount()} samples stored$problem"
     }
 
+    // ---- Stage 6: INDOOR zone --------------------------------------------------------------------------
+    val zone = ZoneEditor()
+    private val zoneDef: StateFlow<com.mockroute.core.zone.ZoneDefinition> =
+        zone.state.map { it.def }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.Eagerly, com.mockroute.core.zone.ZoneDefinition())
+    private val _zonePlanSettings = MutableStateFlow(SegmentPlanSettings.zoneDefaults())
+    val zonePlanSettings: StateFlow<SegmentPlanSettings> = _zonePlanSettings.asStateFlow()
+    val zonePlanner = ZonePlanController(viewModelScope, zoneDef, _zonePlanSettings)
+
+    fun updateZonePlan(transform: (SegmentPlanSettings) -> SegmentPlanSettings) {
+        _zonePlanSettings.value = transform(_zonePlanSettings.value)
+    }
+
+    fun resetZonePlan() {
+        _zonePlanSettings.value = SegmentPlanSettings.zoneDefaults()
+    }
+
+    /** Feasibility distance for the zone: the shortest inside path A→B. */
+    fun zoneShortestPath(): Double? = zonePlanner.shortestPath(zone.state.value.def)
+
+    fun playZone() {
+        val ready = zonePlanner.status.value as? ZoneStatus.Ready
+        if (ready == null) {
+            _message.value = "Finish the zone first (shape, A and B on the edge)"
+            return
+        }
+        startWith { _, _ -> TrajectorySpec.Zone(ready.generated.zone) }
+    }
+
+    private fun initZone() {
+        viewModelScope.launch {
+            repo.zoneDefinition()?.let(zone::load)
+            repo.zonePlan()?.let { _zonePlanSettings.value = it }
+            launch { zoneDef.drop(1).debounce(500).collect { repo.setZoneDefinition(it) } }
+            launch { _zonePlanSettings.drop(1).debounce(500).collect { repo.setZonePlan(it) } }
+        }
+    }
+
     fun setTomTomKey(key: String) = viewModelScope.launch { repo.setTomTomApiKey(key) }
     fun setGoogleRoutesKey(key: String) = viewModelScope.launch { repo.setGoogleRoutesApiKey(key) }
 
@@ -200,6 +237,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         initPlan()
+        initZone()
         // Re-route fallback routes as soon as the provider or an API key changes (no need to re-open screens).
         viewModelScope.launch {
             settings.filterNotNull()

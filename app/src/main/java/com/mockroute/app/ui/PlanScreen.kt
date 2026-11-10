@@ -67,11 +67,17 @@ internal fun fmtHmm(seconds: Double): String {
 private val TIME_SCALES = listOf("1 h" to 3600.0, "6 h" to CoupledSliders.T_CAP)
 
 @Composable
-fun PlanScreen(vm: MainViewModel, onBack: () -> Unit) {
-    val plan by vm.plan.collectAsStateWithLifecycle()
+fun PlanScreen(vm: MainViewModel, onBack: () -> Unit, indoor: Boolean = false) {
+    val routePlan by vm.plan.collectAsStateWithLifecycle()
+    val zonePlan by vm.zonePlanSettings.collectAsStateWithLifecycle()
     val editor by vm.editor.state.collectAsStateWithLifecycle()
-    val p = plan ?: return
-    val d = editor.result?.geometry?.lengthM ?: 0.0
+    val zoneState by vm.zone.state.collectAsStateWithLifecycle()
+    val p = (if (indoor) zonePlan else routePlan) ?: return
+    // Feasibility distance: the route length, or for a zone the shortest inside path A→B.
+    val d = if (indoor) remember(zoneState.def) { vm.zoneShortestPath() } ?: 0.0 else editor.result?.geometry?.lengthM ?: 0.0
+    val update: ((SegmentPlanSettings) -> SegmentPlanSettings) -> Unit = if (indoor) vm::updateZonePlan else vm::updatePlan
+    val feasibility: (SegmentPlanSettings) -> Feasibility.Result =
+        if (indoor) { s -> com.mockroute.core.zone.ZonePlanner.feasibility(d, s) } else { s -> s.feasibility(d) }
 
     Scaffold { padding ->
         Column(
@@ -82,7 +88,8 @@ fun PlanScreen(vm: MainViewModel, onBack: () -> Unit) {
                 Column(Modifier.weight(1f)) {
                     Text("Speed & time", style = MaterialTheme.typography.headlineSmall)
                     Text(
-                        "Segment: ${formatDistance(d)} · ${editor.profile.label}",
+                        if (indoor) "Indoor zone · shortest way A→B ${formatDistance(d)} (wandering makes it longer)"
+                        else "Segment: ${formatDistance(d)} · ${editor.profile.label}",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -97,7 +104,7 @@ fun PlanScreen(vm: MainViewModel, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.primary,
                 )
             }
-            FeasibilityBanner(d, p, onApply = vm::applyCoupled)
+            FeasibilityBanner(d, p, feasibility, onApply = { c -> update { it.applyCoupled(c) } })
 
             GammaCard(
                 title = "Speed",
@@ -107,7 +114,7 @@ fun PlanScreen(vm: MainViewModel, onBack: () -> Unit) {
                 fromUi = { it / KMH },
                 uiStep = 1.0,
                 format = ::fmtKmh,
-                onChange = { s -> vm.updatePlan { it.copy(speed = s) } },
+                onChange = { s -> update { it.copy(speed = s) } },
             )
             GammaCard(
                 title = "Time",
@@ -118,19 +125,26 @@ fun PlanScreen(vm: MainViewModel, onBack: () -> Unit) {
                 fromUi = { it * 60.0 },
                 uiStep = 1.0,
                 format = ::fmtHmm,
-                onChange = { s -> vm.updatePlan { it.copy(time = s) } },
+                onChange = { s -> update { it.copy(time = s) } },
             )
-            AccelerationCard(p, editor.profile, onChange = { a, preset ->
-                vm.updatePlan { it.copy(aMaxMps2 = a, accelPreset = preset) }
+            AccelerationCard(p, if (indoor) com.mockroute.core.route.RoutingProfile.Walk else editor.profile, onChange = { a, preset ->
+                update { it.copy(aMaxMps2 = a, accelPreset = preset) }
             })
-            TextButton(onClick = vm::resetPlan) { Text("Reset to ${editor.profile.label} defaults") }
+            TextButton(onClick = if (indoor) vm::resetZonePlan else vm::resetPlan) {
+                Text(if (indoor) "Reset to indoor defaults" else "Reset to ${editor.profile.label} defaults")
+            }
         }
     }
 }
 
 @Composable
-private fun FeasibilityBanner(d: Double, p: SegmentPlanSettings, onApply: (CoupledSliders) -> Unit) {
-    val result = remember(d, p) { p.feasibility(d) }
+private fun FeasibilityBanner(
+    d: Double,
+    p: SegmentPlanSettings,
+    feasibility: (SegmentPlanSettings) -> Feasibility.Result,
+    onApply: (CoupledSliders) -> Unit,
+) {
+    val result = remember(d, p) { feasibility(p) }
     val ok = result.feasible
     Card(
         colors = CardDefaults.cardColors(

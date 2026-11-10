@@ -49,7 +49,7 @@ import org.maplibre.spatialk.geojson.Position
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private enum class ToolbarItem(val label: String) { Explore("Explore"), P2P("A → B"), Streets("Streets"), Free("Free draw") }
+private enum class ToolbarItem(val label: String) { Explore("Explore"), P2P("A→B"), Streets("Streets"), Free("Free"), Indoor("Indoor") }
 
 @Composable
 fun ModeToolbar(
@@ -63,6 +63,7 @@ fun ModeToolbar(
         EditMode.Explore -> ToolbarItem.Explore
         EditMode.PointToPoint -> ToolbarItem.P2P
         EditMode.Streets -> if (snap) ToolbarItem.Streets else ToolbarItem.Free
+        EditMode.Indoor -> ToolbarItem.Indoor
     }
     Surface(shape = MaterialTheme.shapes.extraLarge, shadowElevation = 4.dp, modifier = Modifier.fillMaxWidth()) {
         SingleChoiceSegmentedButtonRow(Modifier.padding(4.dp).fillMaxWidth()) {
@@ -75,6 +76,7 @@ fun ModeToolbar(
                             ToolbarItem.P2P -> onMode(EditMode.PointToPoint)
                             ToolbarItem.Streets -> onStreets()
                             ToolbarItem.Free -> onFreeDraw()
+                            ToolbarItem.Indoor -> onMode(EditMode.Indoor)
                         }
                     },
                     shape = SegmentedButtonDefaults.itemShape(i, ToolbarItem.entries.size),
@@ -170,7 +172,7 @@ fun SegmentSheet(
                         Switch(checked = !state.snap, onCheckedChange = { onSnap(!it) })
                     }
                 }
-                EditMode.Explore -> Unit
+                EditMode.Explore, EditMode.Indoor -> Unit
             }
 
             // Stage 5: traffic (Car/Bus).
@@ -246,7 +248,7 @@ private fun hint(s: RouteEditorState): String = when (s.mode) {
         s.waypoints.size == 1 -> "Tap the next point"
         else -> "Routing…"
     }
-    EditMode.Explore -> ""
+    EditMode.Explore, EditMode.Indoor -> ""
 }
 
 private fun providerLabel(id: String): String = id.split("+").joinToString(" + ") { part ->

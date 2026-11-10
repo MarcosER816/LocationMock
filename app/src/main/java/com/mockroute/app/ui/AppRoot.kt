@@ -25,6 +25,7 @@ private enum class Screen { Map, Wizard, Settings, Plan }
 @Composable
 fun AppRoot(vm: MainViewModel = viewModel()) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val editorState by vm.editor.state.collectAsStateWithLifecycle()
     var screen by rememberSaveable { mutableStateOf<Screen?>(null) }
 
     val loaded = settings
@@ -50,7 +51,7 @@ fun AppRoot(vm: MainViewModel = viewModel()) {
         }
         Screen.Plan -> {
             BackHandler { screen = Screen.Map }
-            PlanScreen(vm, onBack = { screen = Screen.Map })
+            PlanScreen(vm, onBack = { screen = Screen.Map }, indoor = editorState.mode == EditMode.Indoor)
         }
         Screen.Map -> MapScreen(vm, onOpenSettings = { screen = Screen.Settings }, onOpenPlan = {
             vm.ensurePlan()

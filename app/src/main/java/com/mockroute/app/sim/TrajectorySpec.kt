@@ -46,6 +46,13 @@ sealed interface TrajectorySpec {
         override val label: String get() = "Following plan"
     }
 
+    /** Stage 6: an INDOOR zone wander plan (handed over in-process like [Plan]). */
+    data class Zone(val zone: com.mockroute.core.zone.ZonePlan) : TrajectorySpec {
+        override val altitudeM: Double get() = 0.0
+        override fun build(): Trajectory = zone
+        override val label: String get() = "Wandering indoors"
+    }
+
     fun writeTo(intent: Intent): Intent = intent.apply {
         putExtra(EXTRA_ALT, altitudeM)
         when (val s = this@TrajectorySpec) {
@@ -61,7 +68,7 @@ sealed interface TrajectorySpec {
                 putExtra(EXTRA_TO_LAT, s.to.lat)
                 putExtra(EXTRA_TO_LON, s.to.lon)
             }
-            is Plan -> {
+            is Plan, is Zone -> {
                 putExtra(EXTRA_TYPE, TYPE_PLAN)
                 putExtra(EXTRA_PLAN_ID, PlanHandoff.put(s))
             }
@@ -120,11 +127,11 @@ sealed interface TrajectorySpec {
  * not restarted (START_NOT_STICKY), so losing this map is harmless.
  */
 object PlanHandoff {
-    private val specs = LinkedHashMap<Long, TrajectorySpec.Plan>()
+    private val specs = LinkedHashMap<Long, TrajectorySpec>()
     private var nextId = 1L
 
     @Synchronized
-    fun put(spec: TrajectorySpec.Plan): Long {
+    fun put(spec: TrajectorySpec): Long {
         val id = nextId++
         specs[id] = spec
         while (specs.size > 4) specs.remove(specs.keys.first())
@@ -132,5 +139,5 @@ object PlanHandoff {
     }
 
     @Synchronized
-    fun get(id: Long): TrajectorySpec.Plan? = specs[id]
+    fun get(id: Long): TrajectorySpec? = specs[id]
 }
