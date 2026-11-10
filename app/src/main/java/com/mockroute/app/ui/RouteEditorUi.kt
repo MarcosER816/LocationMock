@@ -4,6 +4,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,21 +14,17 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -49,7 +47,13 @@ import org.maplibre.spatialk.geojson.Position
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private enum class ToolbarItem(val label: String) { Explore("Explore"), P2P("A→B"), Streets("Streets"), Free("Free"), Indoor("Zone") }
+private enum class ToolbarItem(val label: String, val color: Color) {
+    Explore("Map", com.mockroute.app.ui.theme.AppColors.Text),
+    P2P("Route", com.mockroute.app.ui.theme.AppColors.Blue),
+    Streets("Trace", com.mockroute.app.ui.theme.AppColors.Cyan),
+    Free("Draw", com.mockroute.app.ui.theme.AppColors.Amber),
+    Indoor("Area", com.mockroute.app.ui.theme.AppColors.Purple),
+}
 
 @Composable
 fun ModeToolbar(
@@ -79,9 +83,15 @@ fun ModeToolbar(
                             ToolbarItem.Indoor -> onMode(EditMode.Indoor)
                         }
                     },
-                    shape = SegmentedButtonDefaults.itemShape(i, ToolbarItem.entries.size),
+                    shape = SegmentedButtonDefaults.itemShape(i, ToolbarItem.entries.size, baseShape = com.mockroute.app.ui.theme.AppShapes.Button),
+                    colors = SegmentedButtonDefaults.colors(
+                        activeContainerColor = item.color,
+                        activeContentColor = Color(0xFF0D1117),
+                        inactiveContainerColor = MaterialTheme.colorScheme.surface,
+                        inactiveContentColor = item.color,
+                    ),
                     icon = {},
-                ) { Text(item.label, style = MaterialTheme.typography.labelMedium, maxLines = 1) }
+                ) { Text(item.label, style = MaterialTheme.typography.labelLarge, maxLines = 1) }
             }
         }
     }
@@ -118,7 +128,8 @@ fun SegmentSheet(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 6.dp),
     ) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Scrolls inside the bottom area so the map keeps at least half of the screen.
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             // Summary line.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -204,7 +215,7 @@ fun SegmentSheet(
                         style = MaterialTheme.typography.bodySmall,
                         color = if (feas?.feasible == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                     )
-                    OutlinedButton(onClick = onOpenPlan) { Text("Speed & time…") }
+                    OutlinedButton(onClick = onOpenPlan) { Text("Speed & time") }
                 }
             }
 
@@ -222,12 +233,12 @@ fun SegmentSheet(
                         }
                         SpeedOverTimeChart(g.plan, g.scale, Modifier.fillMaxWidth())
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedButton(onClick = onReroll) { Text("Re-roll") }
-                            Text("Lock time", style = MaterialTheme.typography.bodyMedium)
+                            OutlinedButton(onClick = onReroll) { Text("Shuffle") }
+                            Text("Keep duration", style = MaterialTheme.typography.bodyMedium)
                             Switch(checked = lockTime, onCheckedChange = onLockTime)
                         }
                         Button(onClick = onPlayPlan, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
-                            Text("Play plan")
+                            Text("Start")
                         }
                     }
                     PlanStatus.Generating -> Text("Generating plan…", style = MaterialTheme.typography.bodySmall)

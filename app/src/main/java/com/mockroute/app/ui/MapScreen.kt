@@ -7,25 +7,23 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -121,12 +119,19 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             zoom = if (real != null) 15.0 else 1.5,
         ),
     )
-    var styleIndex by rememberSaveable { mutableIntStateOf(0) }
+    // Map style (Settings): dark by default; falls back along the chain if a style can't be loaded.
+    val styleChain = remember(settings?.mapStyle) { TileStyle.chainFor(settings?.mapStyle ?: "dark") }
+    var styleIndex by rememberSaveable(settings?.mapStyle) { mutableIntStateOf(0) }
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val online by vm.online.collectAsStateWithLifecycle()
+    val resumable by vm.resumable.collectAsStateWithLifecycle()
+    // The map always keeps at least half of the screen: everything at the bottom shares at most 45 % of it.
+    val maxBottom = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.45f).dp
 
     fun flyTo(p: LatLon, zoom: Double = 16.0) = scope.launch {
         cameraState.animateTo(
             cameraState.position.copy(target = Position(p.lon, p.lat), zoom = maxOf(zoom, cameraState.position.zoom)),
-            duration = 800.milliseconds,
+            duration = com.mockroute.app.ui.theme.AppMotion.DURATION_MS.milliseconds, // app rule: ≤ 100 ms
         )
     }
 
@@ -145,11 +150,14 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
     val shownB = dragPreview?.takeIf { it.first == Endpoint.B }?.second ?: editor.b
 
     val currentOnLoadFailed by rememberUpdatedState { _: String? ->
-        if (styleIndex < TileStyle.chain.lastIndex) styleIndex++
+        if (styleIndex < styleChain.lastIndex) styleIndex++
     }
     val currentOnClick by rememberUpdatedState { pos: Position, _: DpOffset ->
         if (vm.editor.state.value.mode == EditMode.Indoor) {
+            val tool = vm.zone.state.value.tool
             vm.zone.onMapTap(LatLon(pos.latitude, pos.longitude))
+            // A little tick when a point snaps to a wall or a street.
+            if (tool == ZoneTool.Entry || tool == ZoneTool.Exit) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
             return@rememberUpdatedState ClickResult.Consume
         }
         val ready = vm.planner.status.value as? PlanStatus.Ready
@@ -210,7 +218,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     onDrag = vm.zone::drag,
                     onTap = { id -> vm.zone.onHandleTap(id)?.let(vm::showMessage) },
                 ),
-            baseStyle = BaseStyle.Uri(TileStyle.chain[styleIndex]),
+            baseStyle = BaseStyle.Uri(styleChain[styleIndex.coerceIn(0, styleChain.lastIndex)]),
             cameraState = cameraState,
             // MaplibreMap (0.14) remembers its callbacks from the FIRST composition and never updates them, so
             // these lambdas must not capture composition-time values (e.g. the current mode): they forward to
@@ -431,7 +439,12 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             SmallFloatingActionButton(onClick = onOpenSettings) {
                 Icon(painterResource(R.drawable.ic_settings), contentDescription = "Settings")
             }
-            SmallFloatingActionButton(onClick = onOpenTimeline) { Text("⏱", style = MaterialTheme.typography.titleMedium) }
+            SmallFloatingActionButton(
+                onClick = onOpenTimeline,
+                modifier = Modifier.semantics { contentDescription = "Trip" },
+                containerColor = com.mockroute.app.ui.theme.AppColors.Green,
+                contentColor = Color(0xFF00210F),
+            ) { Text("⏱", style = MaterialTheme.typography.titleMedium) }
             SmallFloatingActionButton(onClick = {
                 if (sim.isActive) {
                     // Don't read the location now: it would be our own mock. Show the stored real fix.
@@ -455,8 +468,25 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
 
         // Bottom: attribution + sheets.
         Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars),
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars).heightIn(max = maxBottom),
         ) {
+            if (!online) {
+                Surface(Modifier.padding(horizontal = 12.dp, vertical = 2.dp), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.tertiaryContainer) {
+                    Text("Offline: showing saved map and routes only", Modifier.padding(horizontal = 12.dp, vertical = 6.dp), style = MaterialTheme.typography.labelMedium)
+                }
+            }
+            resumable?.takeIf { !sim.isActive }?.let { r ->
+                Surface(Modifier.padding(horizontal = 12.dp, vertical = 4.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer, shadowElevation = 4.dp) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Text(
+                            "“${r.name}” ${I18n.tr("was interrupted at")} ${(100 * r.elapsedS / r.totalS.coerceAtLeast(1.0)).toInt()} %",
+                            style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f),
+                        )
+                        TextButton(onClick = vm::dismissResume) { Text("Dismiss") }
+                        Button(onClick = vm::resumeTrip) { Text("Resume trip") }
+                    }
+                }
+            }
             editingSegment?.let { k ->
                 Surface(
                     Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
@@ -570,10 +600,10 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             Text(
                 TileStyle.ATTRIBUTION,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFF333333),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .align(Alignment.End)
-                    .background(Color.White.copy(alpha = 0.7f))
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.7f))
                     .padding(horizontal = 4.dp)
                     .padding(end = 6.dp, bottom = 2.dp),
             )
@@ -661,8 +691,8 @@ private fun PointSheet(
                 TextButton(onClick = onClose) { Text("Close") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onSimulate, modifier = Modifier.weight(1f)) { Text("Simulate here") }
-                FilledTonalButton(onClick = onWalk, modifier = Modifier.weight(1f)) { Text("Walk straight to here") }
+                Button(onClick = onSimulate, modifier = Modifier.weight(1f)) { Text("Be here") }
+                FilledTonalButton(onClick = onWalk, modifier = Modifier.weight(1f)) { Text("Walk here") }
             }
         }
     }
@@ -714,8 +744,7 @@ private fun SimulationCard(
     }
 }
 
-internal fun formatDistance(m: Double): String =
-    if (m < 1000) String.format(Locale.US, "%.0f m", m) else String.format(Locale.US, "%.2f km", m / 1000)
+internal fun formatDistance(m: Double): String = UiUnits.distance(m)
 
 /** h:mm (UI convention), or m:ss under an hour. */
 internal fun formatDuration(seconds: Double): String {

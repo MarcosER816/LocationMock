@@ -372,22 +372,140 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private fun keptSettings(previous: SegmentPlanSettings?, edited: SegmentPlanSettings?): SegmentPlanSettings? =
         if (settingsEditedInSegment) edited else previous
 
-    /** Plays the planned timeline from segment [fromSegment] (continuous; one service run). */
-    fun playTimeline(fromSegment: Int = 0) {
+    /** What to start once the trip has been prepared: (from step, or an exact offset in seconds). */
+    private var pendingStart: Pair<Int, Double?>? = null
+
+    /**
+     * Starts the trip from step [fromSegment] (or at [offsetS] seconds when resuming). If the trip isn't prepared
+     * yet — or changed since — it is prepared first and then starts by itself: one tap is enough.
+     */
+    fun playTimeline(fromSegment: Int = 0, offsetS: Double? = null) {
         val st = timelines.plan.value as? TimelinePlanState.Planned
         val t = timelines.timeline.value
         val plan = st?.plan
         when {
-            plan == null -> _message.value = "Tap “Plan all” first"
-            plan.isStaleFor(t) -> _message.value = "The timeline changed since planning — tap “Plan all” again"
-            !plan.playable -> _message.value = "Some segments couldn't be planned: " + plan.segments.mapNotNull { it.error }.joinToString("; ")
+            t.size == 0 -> _message.value = "Add at least one step to the trip first"
+            plan == null || plan.isStaleFor(t) -> {
+                pendingStart = fromSegment to offsetS
+                _message.value = "Preparing the trip…"
+                timelines.planAll()
+            }
+            !plan.playable -> _message.value = "Some steps couldn't be prepared: " + plan.segments.mapNotNull { it.error }.joinToString("; ")
             else -> {
                 // Base altitude = the real location's (captured before mocking); steps may override it.
                 startWith { alt, _ ->
                     val traj = plan.trajectory(alt)!!
-                    TrajectorySpec.Timeline(traj, traj.startOf(fromSegment), t.name)
+                    TrajectorySpec.Timeline(traj, (offsetS ?: traj.startOf(fromSegment)).coerceIn(0.0, traj.durationSeconds), t.name)
                 }
             }
+        }
+    }
+
+    /** Launcher shortcut / Quick Settings tile. */
+    fun playLastTrip() = viewModelScope.launch {
+        // Wait for the saved trip to be loaded from disk.
+        kotlinx.coroutines.delay(600)
+        playTimeline(0)
+    }
+
+    // ---- Stage 10: resume after the process was killed, offline state, background test ---------------
+    private val playbackStore = com.mockroute.app.data.PlaybackStore(app)
+    private val _resumable = MutableStateFlow<com.mockroute.app.data.PlaybackStore.Saved?>(null)
+    val resumable: StateFlow<com.mockroute.app.data.PlaybackStore.Saved?> = _resumable.asStateFlow()
+
+    fun resumeTrip() {
+        val r = _resumable.value ?: return
+        _resumable.value = null
+        playTimeline(0, r.elapsedS)
+    }
+
+    fun dismissResume() {
+        _resumable.value = null
+        playbackStore.clear()
+    }
+
+    private val _online = MutableStateFlow(true)
+    val online: StateFlow<Boolean> = _online.asStateFlow()
+
+    private val _backgroundTest = MutableStateFlow<String?>(null)
+    val backgroundTest: StateFlow<String?> = _backgroundTest.asStateFlow()
+    val tickStats: StateFlow<com.mockroute.app.sim.TickStats> = com.mockroute.app.sim.TickMonitor.stats
+
+    /**
+     * 10-minute check of background behaviour: simulates standing at the real location (harmless) and measures the
+     * gaps between the 1 Hz ticks. Put the app in the background / turn the screen off while it runs.
+     */
+    fun runBackgroundTest() {
+        val real = realLatLon()
+        if (real == null) {
+            _message.value = "Real location unknown — tap the location button on the map first"
+            return
+        }
+        if (simulation.value.isActive) {
+            _message.value = "Stop the current simulation first"
+            return
+        }
+        _backgroundTest.value = "Running… lock the screen or switch apps for 10 minutes."
+        simulateHere(real)
+        viewModelScope.launch {
+            val started = android.os.SystemClock.elapsedRealtime()
+            while (android.os.SystemClock.elapsedRealtime() - started < 600_000) {
+                kotlinx.coroutines.delay(2_000)
+                if (!simulation.value.isActive && android.os.SystemClock.elapsedRealtime() - started > 8_000) break
+            }
+            val s = tickStats.value
+            val ran = (android.os.SystemClock.elapsedRealtime() - started) / 1000
+            stop()
+            val expected = ran.coerceAtLeast(1)
+            _backgroundTest.value = when {
+                ran < 590 -> "Stopped after ${ran / 60} min ${ran % 60} s: the simulation was killed or stopped. Check Autostart and battery settings."
+                s.lateTicks == 0 && s.ticks >= expected * 0.97 -> "PASS: ${s.ticks} ticks in 10 min, longest gap ${"%.1f".format(s.maxGapMs / 1000.0)} s. No throttling."
+                else -> "THROTTLED: ${s.ticks} of ~$expected ticks, ${s.lateTicks} late, longest gap ${"%.1f".format(s.maxGapMs / 1000.0)} s. Set battery to “No restrictions”, enable Autostart and lock the app in Recents."
+            }
+        }
+    }
+
+    fun setLanguage(l: String) = viewModelScope.launch { repo.setLanguage(l) }
+    fun setImperial(on: Boolean) = viewModelScope.launch { repo.setImperial(on) }
+    fun setMapStyle(s: String) = viewModelScope.launch { repo.setMapStyle(s) }
+    fun finishOnboarding() = viewModelScope.launch { repo.setOnboardingDone() }
+
+    private fun initStage10() {
+        // Offer "Resume trip" if a trip was running when the process died (saved < 12 h ago, not finished).
+        playbackStore.load()?.let { s ->
+            val fresh = System.currentTimeMillis() - s.savedAtMs < 12 * 3600_000L
+            if (fresh && s.elapsedS < s.totalS - 5 && !simulation.value.isActive) _resumable.value = s else if (!simulation.value.isActive) playbackStore.clear()
+        }
+        // Start automatically once a requested trip has been prepared.
+        viewModelScope.launch {
+            timelines.plan.collect { st ->
+                val pending = pendingStart
+                if (pending != null && st is TimelinePlanState.Planned) {
+                    pendingStart = null
+                    if (st.plan.playable) playTimeline(pending.first, pending.second)
+                    else _message.value = "Some steps couldn't be prepared: " + st.plan.segments.mapNotNull { it.error }.joinToString("; ")
+                }
+            }
+        }
+        // Language and units follow the settings.
+        viewModelScope.launch {
+            settings.filterNotNull().collect {
+                I18n.apply(it.language)
+                UiUnits.imperial = it.imperialUnits
+            }
+        }
+        // Online / offline.
+        runCatching {
+            val cm = getApplication<Application>().getSystemService(android.net.ConnectivityManager::class.java)
+            _online.value = cm.activeNetwork != null
+            cm.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    _online.value = true
+                }
+                override fun onLost(network: android.net.Network) {
+                    _online.value = cm.activeNetwork != null
+                }
+            })
         }
     }
 
@@ -464,6 +582,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
+        initStage10()
         initPlan()
         initZone()
         // Re-route fallback routes as soon as the provider or an API key changes (no need to re-open screens).

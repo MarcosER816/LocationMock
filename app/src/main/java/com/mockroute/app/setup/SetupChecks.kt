@@ -74,6 +74,17 @@ object SetupIntents {
         appDetailsIntent(context),
     )
 
+    fun isXiaomi(): Boolean = Build.MANUFACTURER.equals("Xiaomi", ignoreCase = true) ||
+        Build.BRAND.lowercase() in setOf("xiaomi", "poco", "redmi")
+
+    /** MIUI / HyperOS Autostart manager; falls back to the app's info page. */
+    fun openAutostart(context: Context) = launchFirst(
+        context,
+        Intent().setClassName("com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"),
+        Intent("miui.intent.action.OP_AUTO_START").addCategory(Intent.CATEGORY_DEFAULT),
+        appDetailsIntent(context),
+    )
+
     fun openAppDetails(context: Context) = launchFirst(context, appDetailsIntent(context))
 
     fun openLocationSettings(context: Context) = launchFirst(

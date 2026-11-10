@@ -115,8 +115,50 @@ class MockLocationService : Service() {
             val ns = runCatching { (application as com.mockroute.app.MockRouteApp).settings.current().noise }.getOrNull()
             noise = if (ns != null && ns.enabled) com.mockroute.core.noise.GpsNoiseModel(ns, if (ns.seed != 0L) ns.seed else System.nanoTime()) else null
             com.mockroute.app.sim.NoiseDebug.clear()
+            com.mockroute.app.sim.TickMonitor.reset()
+            lastTickMs = 0
+            acquireWakeLock()
             tickLoop()
         }
+    }
+
+    private var lastTickMs = 0L
+    private var tickCount = 0
+    private var wakeLock: android.os.PowerManager.WakeLock? = null
+    private val playbackStore by lazy { com.mockroute.app.data.PlaybackStore(this) }
+
+    /** Keeps the CPU awake with the screen off (hours-long trips); released on stop. Capped at 6 h (the trip cap). */
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        wakeLock = runCatching {
+            getSystemService(android.os.PowerManager::class.java)
+                .newWakeLock(android.os.PowerManager.PARTIAL_WAKE_LOCK, "MockRoute:simulation")
+                .apply { acquire(6L * 60 * 60 * 1000 + 10 * 60 * 1000) }
+        }.getOrNull()
+    }
+
+    private fun releaseWakeLock() {
+        runCatching { wakeLock?.takeIf { it.isHeld }?.release() }
+        wakeLock = null
+    }
+
+    /** Tells the user how to re-select MockRoute when it was deselected as mock location app mid-run. */
+    private fun notifyDeselected() {
+        createChannel(this)
+        val open = PendingIntent.getActivity(
+            this, 9,
+            Intent(android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val n = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(getString(R.string.notif_deselected_title))
+            .setContentText(getString(R.string.notif_deselected_text))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.notif_deselected_text)))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        runCatching { getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID + 1, n) }
     }
 
     private var noise: com.mockroute.core.noise.GpsNoiseModel? = null
@@ -126,6 +168,16 @@ class MockLocationService : Service() {
         while (isActive) {
             val traj = trajectory ?: return
             val t = simTimeSeconds()
+            // Tick timing (throttling detection) and resume point for trips.
+            val nowMs = SystemClock.elapsedRealtime()
+            if (lastTickMs != 0L) com.mockroute.app.sim.TickMonitor.tick(nowMs - lastTickMs)
+            lastTickMs = nowMs
+            (spec as? TrajectorySpec.Timeline)?.let { tl ->
+                if (tickCount++ % 5 == 0) {
+                    if (traj.isFinished(t)) playbackStore.clear()
+                    else playbackStore.save(com.mockroute.app.data.PlaybackStore.Saved(tl.name, t, tl.trajectory.durationSeconds, System.currentTimeMillis()))
+                }
+            }
             val state = if (runningSinceMs == null) {
                 (lastState ?: traj.stateAt(t)).copy(speedMps = 0.0)
             } else {
@@ -146,7 +198,9 @@ class MockLocationService : Service() {
                     lastReported = reported
                 }
             } catch (e: SecurityException) {
-                // Mock app selection revoked mid-run.
+                // Mock app selection revoked mid-run: stop cleanly and tell the user how to re-select it. The
+                // resume point is kept, so the trip can continue afterwards.
+                notifyDeselected()
                 fail(SimError.NotMockApp)
                 return
             } catch (e: IllegalArgumentException) {
@@ -207,6 +261,7 @@ class MockLocationService : Service() {
     }
 
     private fun stopSimulation() {
+        playbackStore.clear() // a deliberate stop: nothing to resume
         teardown()
         SimulationRepository.update { SimulationState(error = it.error) }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
@@ -223,6 +278,7 @@ class MockLocationService : Service() {
         lastState = null
         lastReported = null
         noise = null
+        releaseWakeLock()
         runningSinceMs = null
     }
 
@@ -297,7 +353,7 @@ class MockLocationService : Service() {
         } else {
             b.addAction(0, getString(R.string.notif_pause), actionIntent(ACTION_PAUSE, 1))
         }
-        if (timeline != null && timeline.nextStart(elapsedS) != null) b.addAction(0, "Skip", actionIntent(ACTION_SKIP, 4))
+        if (timeline != null && timeline.nextStart(elapsedS) != null) b.addAction(0, getString(R.string.notif_next), actionIntent(ACTION_SKIP, 4))
         b.addAction(0, getString(R.string.notif_stop), actionIntent(ACTION_STOP, 3))
         return b.build()
     }

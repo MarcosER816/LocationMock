@@ -38,6 +38,19 @@ object NoiseDebug {
     }
 }
 
+/** Tick timing of the current/last run: detects background throttling (ticks should be 1 s apart). */
+data class TickStats(val ticks: Int = 0, val maxGapMs: Long = 0, val lateTicks: Int = 0, val startedAtMs: Long = 0)
+
+object TickMonitor {
+    private val _stats = MutableStateFlow(TickStats())
+    val stats: StateFlow<TickStats> = _stats.asStateFlow()
+    fun reset() {
+        _stats.value = TickStats(startedAtMs = System.currentTimeMillis())
+    }
+    /** [gapMs] since the previous tick; "late" = more than 1.5 s. */
+    fun tick(gapMs: Long) = _stats.update { it.copy(ticks = it.ticks + 1, maxGapMs = maxOf(it.maxGapMs, gapMs), lateTicks = it.lateTicks + if (gapMs > 1500) 1 else 0) }
+}
+
 /** In-process source of truth for the simulation, written by [com.mockroute.app.mock.MockLocationService]. */
 object SimulationRepository {
     private val _state = MutableStateFlow(SimulationState())

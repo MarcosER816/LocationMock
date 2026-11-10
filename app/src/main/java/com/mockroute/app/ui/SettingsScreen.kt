@@ -8,13 +8,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,7 +21,6 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
-import androidx.compose.material3.TextButton
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -38,6 +34,61 @@ import com.mockroute.app.map.TileStyle
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@Composable
+private fun GeneralSettings(vm: MainViewModel) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val s = settings ?: return
+    @Composable
+    fun choice(title: String, options: List<Pair<String, String>>, current: String, onPick: (String) -> Unit) {
+        Text(title, style = MaterialTheme.typography.titleSmall)
+        androidx.compose.foundation.layout.FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.forEach { (id, label) ->
+                androidx.compose.material3.FilterChip(selected = current == id, onClick = { onPick(id) }, label = { Text(label) })
+            }
+        }
+    }
+    choice("Language", listOf("system" to "System", "en" to "English", "es" to "Español"), s.language, vm::setLanguage)
+    choice("Units", listOf("metric" to "Metric (km/h, m)", "imperial" to "Imperial (mph, ft)"), if (s.imperialUnits) "imperial" else "metric") { vm.setImperial(it == "imperial") }
+    choice("Map style", listOf("dark" to "Dark", "light" to "Light"), s.mapStyle, vm::setMapStyle)
+}
+
+/** Background reliability: a 10-minute throttling test, and the Xiaomi / HyperOS checklist. */
+@Composable
+private fun BackgroundSection(vm: MainViewModel) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val result by vm.backgroundTest.collectAsStateWithLifecycle()
+    val stats by vm.tickStats.collectAsStateWithLifecycle()
+    val sim by vm.simulation.collectAsStateWithLifecycle()
+    Text("Background test", style = MaterialTheme.typography.titleMedium)
+    Text(
+        "Checks that the phone lets MockRoute keep running with the screen off. It simulates standing at your real " +
+            "location for 10 minutes and measures the gaps between updates (there should be one every second).",
+        style = MaterialTheme.typography.bodySmall,
+    )
+    Button(onClick = vm::runBackgroundTest, enabled = !sim.isActive) { Text("Run 10-minute test") }
+    result?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = if (it.startsWith("PASS")) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.tertiary) }
+    if (stats.ticks > 0) {
+        Text(
+            String.format(Locale.US, "Last run: %d updates, longest gap %.1f s, %d late", stats.ticks, stats.maxGapMs / 1000.0, stats.lateTicks),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
+        )
+    }
+    if (com.mockroute.app.setup.SetupIntents.isXiaomi()) {
+        Text("Xiaomi / HyperOS helper", style = MaterialTheme.typography.titleSmall)
+        Text(
+            "1. Autostart: ON.\n2. Battery saver (“Power”) → No restrictions.\n3. Recents → lock MockRoute (padlock).\n" +
+                "4. Don't use Ultra battery saver while simulating.\n5. Check these again after every HyperOS update: updates can reset them.",
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { com.mockroute.app.setup.SetupIntents.openAutostart(context) }) { Text("Open Autostart") }
+            OutlinedButton(onClick = { com.mockroute.app.setup.SetupIntents.openAppDetails(context) }) { Text("Open app info") }
+        }
+    }
+}
 
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -216,6 +267,12 @@ fun SettingsScreen(vm: MainViewModel, onBack: () -> Unit, onCheckSetup: () -> Un
                     onCheckedChange = { vm.setGmsLayer(it) },
                 )
             }
+
+            HorizontalDivider()
+            GeneralSettings(vm)
+
+            HorizontalDivider()
+            BackgroundSection(vm)
 
             HorizontalDivider()
             NoiseSettingsSection(vm)

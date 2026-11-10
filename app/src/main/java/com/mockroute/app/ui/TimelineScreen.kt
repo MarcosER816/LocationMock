@@ -16,17 +16,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -116,6 +112,13 @@ fun TimelineScreen(vm: MainViewModel, onBack: () -> Unit, onEditOnMap: () -> Uni
                 }
             }
 
+            if (t.size == 0) {
+                Text(
+                    "No steps yet. Add a route, a building, some streets or a pause below.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             // Step cards. Order is fixed (each step depends on the previous one's end point).
             t.segments.forEachIndexed { i, seg ->
                 SegmentCard(
@@ -145,8 +148,8 @@ fun TimelineScreen(vm: MainViewModel, onBack: () -> Unit, onEditOnMap: () -> Uni
             Text("Add a step at the end (from ${com.mockroute.core.timeline.Timeline.pointLabel(t.size)})", style = MaterialTheme.typography.titleSmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { tc.add(SegmentKind.Route) }) { Text("+ Route") }
-                OutlinedButton(onClick = { tc.add(SegmentKind.Indoor) }) { Text("+ Indoor") }
-                OutlinedButton(onClick = { tc.add(SegmentKind.Street) }) { Text("+ Street") }
+                OutlinedButton(onClick = { tc.add(SegmentKind.Indoor) }) { Text("+ Building") }
+                OutlinedButton(onClick = { tc.add(SegmentKind.Street) }) { Text("+ Streets") }
                 OutlinedButton(onClick = { tc.add(SegmentKind.Pause) }) { Text("+ Pause") }
             }
             if (t.size > 0) {
@@ -168,12 +171,12 @@ fun TimelineScreen(vm: MainViewModel, onBack: () -> Unit, onEditOnMap: () -> Uni
                 TimelinePlanState.Idle -> Unit
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Button(onClick = tc::planAll, enabled = t.size > 0) { Text("Plan all") }
+                Button(onClick = tc::planAll, enabled = t.size > 0) { Text("Prepare trip") }
                 OutlinedButton(onClick = {
                     tc.rerollAll()
                     tc.planAll()
-                }, enabled = t.size > 0) { Text("Re-roll all") }
-                Button(onClick = { vm.playTimeline(0) }, enabled = plan?.playable == true && !stale) { Text("Play") }
+                }, enabled = t.size > 0) { Text("Shuffle all") }
+                Button(onClick = { vm.playTimeline(0) }, enabled = t.size > 0) { Text("Start trip") }
                 OutlinedButton(onClick = {
                     vm.showTimelineOnMap(true)
                     onEditOnMap()
@@ -303,8 +306,8 @@ private fun SegmentCard(
     val p = plan?.segments?.getOrNull(i)?.takeIf { it.segment == seg }
     val (icon, title) = when (seg) {
         is Segment.Route -> "🛣" to "Route · ${seg.profile.label}"
-        is Segment.IndoorZone -> "🏠" to "Indoor zone"
-        is Segment.StreetZone -> "🏘" to "Street zone · ${seg.zone.profile.label}"
+        is Segment.IndoorZone -> "🏠" to "Inside a building"
+        is Segment.StreetZone -> "🏘" to "Around the streets · ${seg.zone.profile.label}"
         is Segment.Pause -> "⏸" to "Pause"
     }
     Card(modifier.fillMaxWidth(), colors = CardDefaults.cardColors()) {
@@ -358,11 +361,11 @@ private fun SegmentCard(
             }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = onEdit) { Text("Edit") }
-                TextButton(onClick = onReroll) { Text("Re-roll") }
+                TextButton(onClick = onReroll) { Text("Shuffle") }
                 // GPS reception for the noise model: automatic (indoor zone = indoor, others = urban) or forced.
                 TextButton(onClick = onEnvironment) { Text("GPS: ${seg.environment?.label ?: "auto"}") }
                 TextButton(onClick = onAltitude) { Text("Altitude: ${seg.altitudeM?.let { "${it.roundToInt()} m" } ?: "auto"}") }
-                TextButton(onClick = onPlayFrom, enabled = plan?.playable == true && !stale) { Text("Play from here") }
+                TextButton(onClick = onPlayFrom, enabled = plan?.playable == true && !stale) { Text("Start from here") }
                 if (onDelete != null) TextButton(onClick = onDelete) { Text("Delete") }
             }
         }

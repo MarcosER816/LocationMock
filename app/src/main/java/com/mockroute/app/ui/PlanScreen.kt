@@ -10,12 +10,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Scaffold
@@ -23,8 +21,6 @@ import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -51,7 +47,7 @@ import kotlin.math.roundToInt
 
 private const val KMH = 3.6
 
-private fun fmtKmh(mps: Double) = String.format(Locale.US, "%.1f km/h", mps * KMH)
+private fun fmtKmh(mps: Double) = UiUnits.speed(mps)
 
 /**
  * Durations for the UI: "25 min", "1 h 05 min". (A bare "6:00" was read as 6 minutes on the phone, so the units
@@ -277,7 +273,7 @@ private fun GammaCard(
                     onValueChange = { onChange(setting.copy(center = it.toDouble())) },
                     valueRange = setting.lo.toFloat()..setting.hi.toFloat(),
                 )
-                Text(String.format(Locale.US, "Shape k: %.1f (higher = narrower)", setting.shape), style = MaterialTheme.typography.bodyMedium)
+                Text(String.format(Locale.US, "Consistency: %.1f (higher = steadier)", setting.shape), style = MaterialTheme.typography.bodyMedium)
                 Slider(
                     value = setting.shape.toFloat(),
                     onValueChange = { onChange(setting.copy(shape = (it * 2).roundToInt() / 2.0)) },

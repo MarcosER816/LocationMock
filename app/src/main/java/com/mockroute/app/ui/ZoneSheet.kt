@@ -10,16 +10,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -61,7 +57,7 @@ fun ZoneSheet(
         ) {
             // Stage 7: indoor (free wandering) vs streets (roads only); profile for streets.
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(selected = !streets, onClick = { vm.setZoneKind(ZoneKind.Indoor) }, label = { Text("Indoor") })
+                FilterChip(selected = !streets, onClick = { vm.setZoneKind(ZoneKind.Indoor) }, label = { Text("Building") })
                 FilterChip(selected = streets, onClick = { vm.setZoneKind(ZoneKind.Streets) }, label = { Text("Streets") })
                 if (streets) {
                     Text("·", style = MaterialTheme.typography.bodySmall)
@@ -75,9 +71,9 @@ fun ZoneSheet(
                 ZoneTool.entries.forEach { t ->
                     val label = when (t) {
                         ZoneTool.Draw -> "Shape"
-                        ZoneTool.Entry -> "Entry A"
-                        ZoneTool.Exit -> "Exit B"
-                        ZoneTool.Hotspots -> "Hotspots"
+                        ZoneTool.Entry -> "Start point"
+                        ZoneTool.Exit -> "End point"
+                        ZoneTool.Hotspots -> "Favourite spots"
                     }
                     FilterChip(
                         selected = state.tool == t,
@@ -132,13 +128,13 @@ fun ZoneSheet(
             }
 
             if (def.closed) {
-                Text("Wandering", style = MaterialTheme.typography.titleSmall)
+                Text("How you move around", style = MaterialTheme.typography.titleSmall)
                 Text(String.format(Locale.US, "Pause at a stop: %.0f %% chance, mean %.0f s", def.dwellProbability * 100, def.dwellMeanS), style = MaterialTheme.typography.bodySmall)
                 Slider(value = def.dwellProbability.toFloat(), onValueChange = { z.setDwellProbability(it.toDouble()) }, valueRange = 0f..1f)
                 Slider(value = def.dwellMeanS.toFloat(), onValueChange = { z.setDwellMean(it.roundToInt().toDouble()) }, valueRange = 5f..180f)
                 if (!streets) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Side-to-side wobble", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        Text("Natural sway", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         Switch(checked = def.wobble, onCheckedChange = z::setWobble)
                     }
                 }
@@ -150,9 +146,9 @@ fun ZoneSheet(
                             label = {
                                 Text(
                                     when {
-                                        m == WanderMode.Waypoints -> "Jump between hotspots"
-                                        streets -> "Random walk (biased)"
-                                        else -> "Drift (Langevin)"
+                                        m == WanderMode.Waypoints -> "Go spot to spot"
+                                        streets -> "Stroll around"
+                                        else -> "Drift around"
                                     },
                                 )
                             },
@@ -179,12 +175,12 @@ fun ZoneSheet(
             }
             if (def.closed) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedButton(onClick = onOpenPlan) { Text("Speed & time…") }
-                    OutlinedButton(onClick = vm.zonePlanner::reroll) { Text("Re-roll") }
-                    Text("Lock time", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = onOpenPlan) { Text("Speed & time") }
+                    OutlinedButton(onClick = vm.zonePlanner::reroll) { Text("Shuffle") }
+                    Text("Keep duration", style = MaterialTheme.typography.bodySmall)
                     Switch(checked = lockTime, onCheckedChange = vm.zonePlanner::setLockTime)
                 }
-                Button(onClick = vm::playZone, enabled = status is ZoneStatus.Ready, modifier = Modifier.fillMaxWidth()) { Text("Play zone") }
+                Button(onClick = vm::playZone, enabled = status is ZoneStatus.Ready, modifier = Modifier.fillMaxWidth()) { Text("Start") }
             }
         }
     }
@@ -231,7 +227,7 @@ private fun RoadsRow(vm: MainViewModel, def: com.mockroute.core.zone.ZoneDefinit
                 color = MaterialTheme.colorScheme.outline,
             )
         }
-        OutlinedButton(onClick = vm::refreshRoads, enabled = status !is RoadsStatus.Loading) { Text("Refresh roads") }
+        OutlinedButton(onClick = vm::refreshRoads, enabled = status !is RoadsStatus.Loading) { Text("Update streets") }
     }
 }
 

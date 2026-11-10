@@ -1,8 +1,16 @@
 <resources>
-    <string name="app_name">MockRoute</string>
+    <string name="app_name" translatable="false">MockRoute</string>
     <string name="notif_channel_name">Simulation</string>
     <string name="notif_channel_desc">Shows while MockRoute is simulating your location</string>
     <string name="notif_pause">Pause</string>
     <string name="notif_resume">Resume</string>
     <string name="notif_stop">Stop</string>
+    <string name="notif_next">Next step</string>
+    <string name="notif_deselected_title">MockRoute stopped: no longer the mock location app</string>
+    <string name="notif_deselected_text">Tap to open Developer options → Select mock location app → MockRoute. Then open MockRoute and tap Resume trip.</string>
+    <string name="tile_label" translatable="false">MockRoute</string>
+    <string name="tile_start">Start last trip</string>
+    <string name="tile_stop">Stop simulation</string>
+    <string name="shortcut_play_last_short">Last trip</string>
+    <string name="shortcut_play_last_long">Start my last trip</string>
 </resources>

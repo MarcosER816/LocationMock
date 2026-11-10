@@ -29,6 +29,13 @@ data class RealFix(
 
 data class AppSettings(
     val wizardCompleted: Boolean = false,
+    /** Stage 10. */
+    val onboardingDone: Boolean = false,
+    /** "system" | "en" | "es". */
+    val language: String = "system",
+    val imperialUnits: Boolean = false,
+    /** "dark" | "light". */
+    val mapStyle: String = "dark",
     val disclaimerAccepted: Boolean = false,
     /** null = not chosen yet → default ON when Google Play services is present. */
     val gmsMockLayer: Boolean? = null,
@@ -54,6 +61,10 @@ data class AppSettings(
 class SettingsRepository(private val context: Context) {
     private object Keys {
         val wizardCompleted = booleanPreferencesKey("wizard_completed")
+        val onboardingDone = booleanPreferencesKey("onboarding_done")
+        val language = stringPreferencesKey("language")
+        val imperial = booleanPreferencesKey("imperial_units")
+        val mapStyle = stringPreferencesKey("map_style")
         val disclaimerAccepted = booleanPreferencesKey("disclaimer_accepted")
         val gmsMockLayer = booleanPreferencesKey("gms_mock_layer")
         val realLat = doublePreferencesKey("last_real_lat")
@@ -81,6 +92,10 @@ class SettingsRepository(private val context: Context) {
     suspend fun current(): AppSettings = settings.first()
 
     suspend fun setWizardCompleted(done: Boolean) = context.dataStore.edit { it[Keys.wizardCompleted] = done }
+    suspend fun setOnboardingDone() = context.dataStore.edit { it[Keys.onboardingDone] = true }
+    suspend fun setLanguage(l: String) = context.dataStore.edit { it[Keys.language] = l }
+    suspend fun setImperial(on: Boolean) = context.dataStore.edit { it[Keys.imperial] = on }
+    suspend fun setMapStyle(s: String) = context.dataStore.edit { it[Keys.mapStyle] = s }
 
     suspend fun setDisclaimerAccepted(ok: Boolean) = context.dataStore.edit { it[Keys.disclaimerAccepted] = ok }
 
@@ -154,6 +169,11 @@ class SettingsRepository(private val context: Context) {
         val lon = this[Keys.realLon]
         return AppSettings(
             wizardCompleted = this[Keys.wizardCompleted] ?: false,
+            // Existing installs (wizard already done) don't see the onboarding again.
+            onboardingDone = this[Keys.onboardingDone] ?: (this[Keys.wizardCompleted] ?: false),
+            language = this[Keys.language] ?: "system",
+            imperialUnits = this[Keys.imperial] ?: false,
+            mapStyle = this[Keys.mapStyle] ?: "dark",
             disclaimerAccepted = this[Keys.disclaimerAccepted] ?: false,
             gmsMockLayer = this[Keys.gmsMockLayer],
             lastRealLocation = if (lat != null && lon != null) {

@@ -1,0 +1,14 @@
+<resources>
+    <string name="notif_channel_name">Simulación</string>
+    <string name="notif_channel_desc">Se muestra mientras MockRoute simula tu ubicación</string>
+    <string name="notif_pause">Pausa</string>
+    <string name="notif_resume">Seguir</string>
+    <string name="notif_stop">Parar</string>
+    <string name="notif_next">Siguiente paso</string>
+    <string name="notif_deselected_title">MockRoute se ha parado: ya no es la app de ubicación simulada</string>
+    <string name="notif_deselected_text">Toca para abrir Opciones de desarrollador → Seleccionar app de ubicación simulada → MockRoute. Después abre MockRoute y toca Continuar viaje.</string>
+    <string name="tile_start">Empezar último viaje</string>
+    <string name="tile_stop">Parar simulación</string>
+    <string name="shortcut_play_last_short">Último viaje</string>
+    <string name="shortcut_play_last_long">Empezar mi último viaje</string>
+</resources>

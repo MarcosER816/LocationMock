@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="play_last"
+        android:enabled="true"
+        android:icon="@drawable/ic_launcher"
+        android:shortcutShortLabel="@string/shortcut_play_last_short"
+        android:shortcutLongLabel="@string/shortcut_play_last_long">
+        <intent
+            android:action="com.mockroute.app.PLAY_LAST"
+            android:targetPackage="com.mockroute.app"
+            android:targetClass="com.mockroute.app.MainActivity" />
+    </shortcut>
+</shortcuts>
