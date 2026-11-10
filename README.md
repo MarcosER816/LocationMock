@@ -51,6 +51,14 @@ red = fast. A label shows the total time. Tap the line to see the speed and ETA 
 generates a different plan; **Lock time** keeps the duration fixed. **Play plan** moves your mocked location along
 the route with that speed profile.
 
+## Indoor zone (Stage 6)
+Toolbar → **Indoor**:
+1. **Shape:** tap the corners of a room or building and tap **Close shape**.
+2. **Entry A / Exit B:** tap near the walls; A and B always sit on the edge.
+3. **Hotspots:** mark where you tend to be (drag circles, adjust their size and rotation). **3D preview** shows
+   the result as a 3D surface.
+4. **Play zone:** you enter at A, wander around (pausing sometimes) and leave at B after the planned time.
+
 ## Traffic (Stage 5, Car/Bus)
 With a free TomTom key (Settings → Traffic), Car and Bus routes get typical traffic for your departure time. Tap
 **Depart …** to choose it. The app predicts the trip duration, marks the worst congestion points in red

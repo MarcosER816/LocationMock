@@ -1,8 +1,31 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — verified on device (0.5.2: corridor first, cache hits). Stages 1–4 verified on device._
+_Last updated: 2026-11-10 — Stage 6 (indoor zone + Gaussian-mixture 3D editor) — 0.6.0 built, CI; awaiting phone test. Stages 1–5 verified on device._
 
 ## Done
+### Stage 6 — INDOOR zone + Gaussian-mixture editor (0.6.0)
+- **Toolbar → Indoor.** The zone sheet has four tools:
+  - **Shape:** tap corners, drag them, Undo, **Close shape**, Reopen, Clear. Self-intersecting and < 4 m² shapes
+    are rejected with a message.
+  - **Entry A / Exit B:** a tap snaps to the nearest edge point; dragging slides along the walls; A and B are
+    re-snapped whenever the shape changes.
+  - **Hotspots:** the mixture editor. Shows an on-map heat overlay (40×40 cells, rgba fill), numbered centres
+    (tap the map to move the selected one, or drag it), + Add / Remove, and sliders for weight, σ across/along
+    (0.5–50 m) and rotation (0–180°). **3D preview** opens a dialog.
+  - **Wandering:** dwell chance and mean (gamma), side-to-side wobble on/off, mode "Jump between hotspots"
+    (waypoints) or "Drift (Langevin)".
+  - Plan line, speed-over-time chart, Speed & time… (the Stage 3 cards with indoor defaults), Re-roll, Lock time,
+    **Play zone**.
+- **3D preview** (`Surface3D`): a Compose Canvas perspective wireframe of p(x, y) on 40×40, coloured
+  green→yellow→red by height. Drag rotates (yaw/pitch), with a height slider and auto-rotate. An **fps counter**
+  (frame cadence while auto-rotating) lets you check the ≥ 30 fps target on the phone. Per frame: 2 FloatArrays
+  reused, colours precomputed, 3,120 `drawLine`, no allocation.
+- **Map:** zone outline + light fill, corner dots, heat overlay (Hotspots tool), hotspot centres, A/B markers (map
+  layers), and the plan gradient with a centre label ("12 min · 9 stops · 640 m walked"). Dragging uses
+  `Modifier.mapHandlesDrag`, a generalisation of the A/B technique.
+- **Persistence:** `ZoneDefinition` JSON (`zone_def_v1`) and the zone's own `SegmentPlanSettings` (`zone_plan_v1`),
+  both debounced 500 ms. Playback goes through `TrajectorySpec.Zone` → `PlanHandoff` (now generic).
+
 ### Stage 5 — traffic-aware Car/Bus (0.5.0)
 - **Also in 0.5.0, a user report:** "max time only shows up to 6 minutes". The cap was 6 **hours**, but times were
   shown as `6:00`, which reads as 6 min. Durations are now always spelled out ("25 min", "1 h 05 min", via
@@ -196,6 +219,55 @@ optional API-key secrets → BuildConfig.
   "5 request(s), 0 from cache · approximate path (corridor) · 3 congestion point(s) marked". The 5 requests are
   1 failed exact attempt + 4 bins. Possible optimisation: if exact keeps failing on ORS-traced routes, try
   Corridor first (saves 1 request per fresh analysis).
+
+## Stage 6 API (zone, `:core` package `zone`)
+- `Vec2`, `LocalFrame(origin)` (equirectangular local metres, exact inverse).
+- `Polygon2(vertices)`: stored CCW. `area`, `centroid`, `contains(p, eps)` (boundary = inside),
+  `containsWithMargin`, `nearestBoundaryPoint`, `distanceToBoundary`, `segmentInside(a, b)` (no proper edge
+  crossing plus samples every 0.5 m inside), `isReflex`, `insetVertex`. `Polygon2.validate(v)` returns
+  TooFewVertices / SelfIntersecting / TooSmall (< 4 m²).
+- `InsidePathFinder(polygon, inset = 0.3)`: straight if visible, else Dijkstra on a visibility graph of the
+  reflex vertices inset 0.3 m (precomputed per polygon).
+- `GaussianMixture2D(List<GaussianComponent(weight, meanX, meanY, σx, σy, rotationRad)>)`: `density`, `sample`,
+  `sampleInside(polygon, rng, margin)` (rejection, with a uniform-interior fallback), `grid(nx, ny, bbox,
+  polygon?)`, `default(polygon)` = one Gaussian at the centroid with σ = √area/3.
+- `ZoneDefinition`: vertices/closed/entry/exit (LatLon), `StoredComponent` (mean in LatLon, σ in m, rotation in
+  degrees), dwellProbability 0.3, dwellMeanS 30, wobble on, `WanderMode.Waypoints|Langevin`. Plus `frame()`,
+  `polygon(frame)`, `mixture(frame, polygon)`, `isReady()`.
+- `ZonePlanner.plan(Request(polygon, frame, a, b, mixture, settings, seed, lockTime, dwellProbability, dwellMeanS,
+  wobble, mode)) → ZonePlan`. The steps:
+  1. T ~ time gamma (or its mean), at least tMinPhys(shortest inside path)·1.02 + 1 s.
+  2. Waypoints from the mixture (or a Langevin step on log p with a reflective boundary). Each is joined by an
+     inside path. Dwells are gamma(k = 2, mean) with the given probability.
+  3. Stop when (estimated time so far + the leg + the way to B, at the speed mean) > 0.97·T, after 8 misses.
+  4. Final leg to B.
+  5. The Stage 4 generator with **`Request.stops`** (v = 0 holds as duplicated nodes) and **`targetTimeS`**.
+     If it still finishes early at the slowest speeds, it waits at B for the rest.
+  6. Lateral OU wobble (σ 0.3 m, τ 3 s), tapered to 0 within 3 s of the ends and clipped inside.
+- `ZonePlan : Trajectory`: `localPositionAt(t)`, `geometry` (LatLon, for the gradient), `path`, `waypoints`,
+  `stops`, `targetTimeS`, `shortestPathM`. Accuracy is reported as 12 m (Stage 9 models it).
+- `ZonePlanner.snapToEdge`, `shortestPath`, and `feasibility(shortestM, settings)`: the route check *without*
+  TooShort, since wandering can be longer.
+- `SegmentPlanSettings.zoneDefaults()`: 1.5–5 km/h (mean 3.5, k 5), 5–20 min (mean 10), a = 1.0 Walking,
+  L = 30 m.
+- **Generator change (Stage 4 API):** `Request.stops: List<Stop(atM, durationS)>` (merged into adjacent
+  zero-speed nodes, including a resting start/end) and `Request.targetTimeS`.
+
+### Measured (sandbox)
+- 1,000 plans in an L-shaped 500 m² room: every 0.5 s sample (with wobble) is inside, every leg is inside, start
+  = A and end = B (< 1e-6 m), A/B on the edge, **max |T_plan − T| = 0.05 s**, accel ≤ a_max. All 1,000 run in a
+  few seconds on the JVM.
+- **62.9 %** of the time is within 2σ of the dominant component (target > 60 %; 60 plans, mixture 0.85 / 0.15
+  with a far minor component).
+
+### Limitations
+- **No floor plans, walls/obstacles inside the zone, holes or multiple floors.** The zone is one simple polygon,
+  altitude stays 0, and doors are only A and B.
+- The waypoint planner estimates time at the speed mean, and the generator corrects it exactly. Very small zones
+  with long T end with a wait at B.
+- Langevin mode: the step scale is fixed (√area / 6); the drift is clipped.
+- "Advanced 3D" WebView with plotly: **not done** (stub). The Canvas preview has no hidden-line removal
+  (wireframe).
 
 ## Stage 5: traffic endpoints, params, quota, inaccuracies
 **TomTom Routing API v1** (docs.tomtom.com/routing-api, checked 2026-11-10):
@@ -437,8 +509,23 @@ list of `LatLon`.
 - The tall segment sheet covers part of the map on small screens.
 
 ## Next steps
-- Run the Stage 5 phone test script below.
-- Stage 6: indoor zone + Gaussian-mixture 3D editor.
+- Run the Stage 6 phone test script below.
+- Stage 7: street zone (Overpass road graph inside a polygon; cache, ≤ 100 queries/day).
+
+## How to verify on phone (Stage 6 test script)
+1. Install 0.6.0. Toolbar → **Indoor**. Zoom in on a building (zoom ≈ 19).
+2. **Shape:** tap 6 corners as an L shape → **Close shape**. A purple outline and fill appear. Drag a corner:
+   the shape follows. Crossing edges shows "The outline crosses itself".
+3. **Entry A:** tap outside, near a wall: a green A appears *on the wall*. **Exit B:** the same, giving a red B.
+   Drag A: it slides along the walls only.
+4. **Hotspots:** an orange heat overlay with a numbered circle "1". Tap elsewhere inside: the hotspot moves
+   there. **+ Add** → "2". Change σ and rotation: the heat changes shape. **3D preview**: a coloured surface that
+   rotates on drag. **The fps counter should show ≥ 30** (auto-rotate on).
+5. The sheet shows "Plan: 10 min · 9 stops · … m walked" and a gradient path inside the shape.
+6. Speed & time…: the indoor defaults; the feasibility banner uses the shortest way A→B.
+7. **Play zone**: Google Maps shows you entering at A, wandering inside the shape (pausing sometimes), and leaving
+   at B after about the planned time.
+8. Close and reopen the app: the zone is still there.
 
 ## How to verify on phone (Stage 5 test script)
 1. Install 0.5.0. Plan screen → Time: the range shows "25 min" style labels, and the slider scale defaults to
@@ -485,7 +572,7 @@ list of `LatLon`.
   `platforms;android-36` + `build-tools;36.0.0` with sdkmanager and point `sdk.dir` in `local.properties` at it.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
-- Verified 2026-11-10 in sandbox: `:core:test` 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
+- Verified 2026-11-10 in sandbox: `:core:test` 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
 
 ## 0.2.2 (2026-11-10)
 - **Phone round 2:** the A/B markers now follow the map (map-layer approach confirmed ✅).
