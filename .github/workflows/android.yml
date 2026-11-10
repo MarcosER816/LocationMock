@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write # needed to publish the "latest-debug" release (cloud sessions can't push tags)
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -40,6 +40,36 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
           if-no-files-found: error
+
+      - name: Lint (non-blocking)
+        continue-on-error: true
+        run: ./gradlew :app:lintDebug
+
+      - name: Upload lint report
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-debug.html
+          retention-days: 14
+          if-no-files-found: ignore
+
+      # On main (or the repository's default branch) publish the APK as the release "latest-debug", so it can be
+      # downloaded from the Releases page without opening a workflow run. The release and its tag are re-created
+      # by the workflow on every build.
+      - name: Publish latest-debug release
+        if: github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_name == github.event.repository.default_branch)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk MockRoute-debug.apk
+          gh release delete latest-debug --cleanup-tag --yes || true
+          sleep 3
+          gh release create latest-debug MockRoute-debug.apk \
+            --target "$GITHUB_SHA" \
+            --title "MockRoute — latest debug build" \
+            --notes "Built from ${GITHUB_SHA::7} (run #${GITHUB_RUN_NUMBER}). Download MockRoute-debug.apk on your phone and install it; it updates the installed app in place."
 
       - name: Upload core test reports
         if: failure()
