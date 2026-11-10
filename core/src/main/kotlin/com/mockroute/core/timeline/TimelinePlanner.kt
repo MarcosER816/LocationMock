@@ -60,7 +60,7 @@ class TimelinePlan(val timeline: Timeline, val startEpochS: Long, val segments: 
     /** Stale if any segment changed since planning. */
     fun isStaleFor(t: Timeline): Boolean = t.segments.size != segments.size || t.segments.indices.any { t.segments[it] != segments[it].segment }
 
-    fun trajectory(): TimelineTrajectory? = if (playable) TimelineTrajectory(segments.map { TimelineTrajectory.Part(it.trajectory!!, it.startOffsetS, it.durationS, label(it)) }) else null
+    fun trajectory(): TimelineTrajectory? = if (playable) TimelineTrajectory(segments.map { TimelineTrajectory.Part(it.trajectory!!, it.startOffsetS, it.durationS, label(it), it.segment.environment) }) else null
 
     fun label(p: PlannedSegment): String = when (p.segment) {
         is Segment.Route -> "Route"
@@ -213,7 +213,20 @@ object TimelinePlanner {
  * for t − start. Supports "start at segment k" ([startOf]) and skipping ([nextStart]).
  */
 class TimelineTrajectory(val parts: List<Part>) : Trajectory {
-    class Part(val trajectory: Trajectory, val startS: Double, val durationS: Double, val label: String)
+    class Part(
+        val trajectory: Trajectory,
+        val startS: Double,
+        val durationS: Double,
+        val label: String,
+        /** Per-step override of the reception environment (null = the trajectory's own). */
+        val environment: com.mockroute.core.noise.Environment? = null,
+    )
+
+    override fun environmentAt(tSeconds: Double): com.mockroute.core.noise.Environment {
+        val t = tSeconds.coerceAtLeast(0.0)
+        val p = parts[indexAt(t)]
+        return p.environment ?: p.trajectory.environmentAt((t - p.startS).coerceAtMost(p.durationS))
+    }
 
     init {
         require(parts.isNotEmpty())

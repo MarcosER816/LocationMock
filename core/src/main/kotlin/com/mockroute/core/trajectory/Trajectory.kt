@@ -27,6 +27,9 @@ interface Trajectory {
 
     fun isFinished(tSeconds: Double): Boolean = durationSeconds?.let { tSeconds >= it } ?: false
 
+    /** Stage 9: reception environment at [tSeconds] (drives the GPS noise model). Routes default to Urban. */
+    fun environmentAt(tSeconds: Double): com.mockroute.core.noise.Environment = com.mockroute.core.noise.Environment.Urban
+
     companion object {
         const val DEFAULT_ACCURACY_M: Double = 5.0
         const val DEFAULT_ALTITUDE_M: Double = 0.0

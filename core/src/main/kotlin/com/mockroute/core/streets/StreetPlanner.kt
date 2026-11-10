@@ -143,6 +143,7 @@ object StreetPlanner {
             warning = plan.warning,
             shortestPathM = dShort,
             accuracyM = STREET_ACCURACY_M,
+            environment = com.mockroute.core.noise.Environment.Urban,
         )
         return StreetPlan(zone, g, edgePath, na, nb)
     }

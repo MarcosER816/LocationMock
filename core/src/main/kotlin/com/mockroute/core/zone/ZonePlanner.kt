@@ -41,7 +41,10 @@ class ZonePlan(
     val shortestPathM: Double,
     /** Reported horizontal accuracy (indoor 12 m, streets 5 m; Stage 9 models it properly). */
     val accuracyM: Double = INDOOR_ACCURACY_M,
+    /** Stage 9: Indoor for indoor zones, Urban for street zones. */
+    val environment: com.mockroute.core.noise.Environment = com.mockroute.core.noise.Environment.Indoor,
 ) : Trajectory {
+    override fun environmentAt(tSeconds: Double) = environment
     private val cum = DoubleArray(path.size).also { for (i in 1 until path.size) it[i] = it[i - 1] + path[i - 1].distanceTo(path[i]) }
     val lengthM: Double get() = cum.last()
 

@@ -30,6 +30,10 @@ sealed class Segment {
     abstract fun withEnd(p: LatLon): Segment
     abstract fun reroll(): Segment
 
+    /** Stage 9: reception environment override for the GPS noise (null = automatic for the step's kind). */
+    abstract val environment: com.mockroute.core.noise.Environment?
+    abstract fun withEnvironment(e: com.mockroute.core.noise.Environment?): Segment
+
     @Serializable
     @SerialName("route")
     data class Route(
@@ -45,7 +49,9 @@ sealed class Segment {
         val geometryFor: List<LatLon> = emptyList(),
         val settings: SegmentPlanSettings? = null,
         override val seedOffset: Long = 0,
+        override val environment: com.mockroute.core.noise.Environment? = null,
     ) : Segment() {
+        override fun withEnvironment(e: com.mockroute.core.noise.Environment?) = copy(environment = e)
         val inputs: List<LatLon> get() = listOf(start) + waypoints + listOf(end)
         val geometryFresh: Boolean get() = geometry.size >= 2 && geometryFor == inputs
         override fun withStart(p: LatLon) = copy(start = p)
@@ -62,7 +68,9 @@ sealed class Segment {
         val zone: ZoneDefinition,
         val settings: SegmentPlanSettings? = null,
         override val seedOffset: Long = 0,
+        override val environment: com.mockroute.core.noise.Environment? = null,
     ) : Segment() {
+        override fun withEnvironment(e: com.mockroute.core.noise.Environment?) = copy(environment = e)
         override fun withStart(p: LatLon) = copy(start = p, zone = zone.copy(entry = p))
         override fun withEnd(p: LatLon) = copy(end = p, zone = zone.copy(exit = p))
         override fun reroll() = copy(seedOffset = seedOffset + 1)
@@ -77,7 +85,9 @@ sealed class Segment {
         val zone: ZoneDefinition,
         val settings: SegmentPlanSettings? = null,
         override val seedOffset: Long = 0,
+        override val environment: com.mockroute.core.noise.Environment? = null,
     ) : Segment() {
+        override fun withEnvironment(e: com.mockroute.core.noise.Environment?) = copy(environment = e)
         override fun withStart(p: LatLon) = copy(start = p, zone = zone.copy(entry = p))
         override fun withEnd(p: LatLon) = copy(end = p, zone = zone.copy(exit = p))
         override fun reroll() = copy(seedOffset = seedOffset + 1)
@@ -91,7 +101,9 @@ sealed class Segment {
         val at: LatLon,
         val duration: GammaSetting = GammaSetting(60.0, 300.0, 120.0, 4.0),
         override val seedOffset: Long = 0,
+        override val environment: com.mockroute.core.noise.Environment? = null,
     ) : Segment() {
+        override fun withEnvironment(e: com.mockroute.core.noise.Environment?) = copy(environment = e)
         override val start: LatLon get() = at
         override val end: LatLon get() = at
         override fun withStart(p: LatLon) = copy(at = p)
