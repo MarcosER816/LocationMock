@@ -59,7 +59,8 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
     @Volatile var lockExit: Boolean = false
 
     /** The first corner is the fixed entry (it guarantees the entry is on the edge) → it can't be moved/undone either. */
-    private fun firstCornerLocked(d: ZoneDefinition) = lockEntry && d.vertices.isNotEmpty() && d.vertices.first() == d.entry
+    private fun firstCornerLocked(d: ZoneDefinition) =
+        d.kind == com.mockroute.core.zone.ZoneKind.Indoor && lockEntry && d.vertices.isNotEmpty() && d.vertices.first() == d.entry
 
     fun setTool(t: ZoneTool) = _state.update { it.copy(tool = t) }
 
@@ -161,7 +162,7 @@ class ZoneEditor(initial: ZoneDefinition = ZoneDefinition()) {
             Polygon2.Companion.Problem.SelfIntersecting -> return "The outline crosses itself: drag a corner (or Undo) so the edges don't cross."
         }
         fixedPointLeftOutside(_state.value.def.copy(closed = true))?.let {
-            return "The zone's $it point is fixed and would be outside this shape. Draw the shape around it (or with it on the edge)."
+            return "Can't close yet: the zone's $it point is outside this shape. Add or drag corners so the shape goes around it (the point may also sit on the edge)."
         }
         update { it.copy(closed = true) }
         // Re-snap A/B to the new outline; materialise the default hotspot so it can be edited.

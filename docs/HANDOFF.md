@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 8 (timeline) — 0.8.2 (user rules: fixed points, letters, context, auto speed/time, street A/B never outside) built, CI; awaiting phone test. Stages 1–7 verified on device._
+_Last updated: 2026-11-10 — Stage 8 (timeline) — 0.8.3 (user rules: fixed points, letters, context, auto speed/time, street A/B never outside, free street corners) built, CI; awaiting phone test. Stages 1–7 verified on device._
 
 ## Done
 ### Stage 8 — TIMELINE (0.8.0)
@@ -278,6 +278,13 @@ optional API-key secrets → BuildConfig.
 
 - **Phone result 2026-11-10 (0.6.1):** shape closes; "everything seems fine". The fps figure of the 3D preview
   wasn't reported; ask for it if performance comes up.
+
+## 0.8.3 — street-zone corners are free (user request, 2026-11-10)
+- Indoor zone steps keep the fixed entry as the shape's first corner (the user likes that). **Street zone steps no
+  longer seed a corner:** all corners are the user's (`Timeline.add/addAtStart`, `seedFirstCorner` and
+  `firstCornerLocked` are indoor-only now). The fixed entry is shown as its lettered marker while drawing, and
+  **the shape only closes if that point is inside it or on its edge** (existing 0.8.2 check; clearer message and a
+  hint in the Shape tool). Street zones created with 0.8.1/0.8.2 keep their old first corner, which is now movable.
 
 ## 0.8.2 — street-zone start/end never outside the zone (user rule, 2026-11-10)
 - **Rule:** in a street zone the entry and exit must be inside the zone or on its edge (tolerance 0.5 m).

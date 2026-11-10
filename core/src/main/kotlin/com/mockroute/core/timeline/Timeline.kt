@@ -188,9 +188,11 @@ data class Timeline(
         val p = boundary(size)
         val seg: Segment = when (kind) {
             SegmentKind.Route -> Segment.Route(id, p, p, profile)
-            // The entry point is the shape's first corner, so it is on the edge whatever the user draws next.
+            // Indoor: the entry point is the shape's first corner, so it is on the edge whatever the user draws next.
+            // Street: the entry may be anywhere inside, so the corners are left entirely to the user (the editor only
+            // lets the shape close when the entry is inside it or on its edge).
             SegmentKind.Indoor -> Segment.IndoorZone(id, p, p, ZoneDefinition(vertices = listOf(p), entry = p, exit = p, kind = ZoneKind.Indoor))
-            SegmentKind.Street -> Segment.StreetZone(id, p, p, ZoneDefinition(vertices = listOf(p), entry = p, exit = p, kind = ZoneKind.Streets, profile = profile))
+            SegmentKind.Street -> Segment.StreetZone(id, p, p, ZoneDefinition(entry = p, exit = p, kind = ZoneKind.Streets, profile = profile))
             SegmentKind.Pause -> Segment.Pause(id, p)
         }
         return copy(segments = segments + seg).normalized()
@@ -343,7 +345,7 @@ data class Timeline(
         val seg: Segment = when (kind) {
             SegmentKind.Route -> Segment.Route(id, p, p, profile)
             SegmentKind.Indoor -> Segment.IndoorZone(id, p, p, ZoneDefinition(vertices = listOf(p), entry = p, exit = p, kind = ZoneKind.Indoor))
-            SegmentKind.Street -> Segment.StreetZone(id, p, p, ZoneDefinition(vertices = listOf(p), entry = p, exit = p, kind = ZoneKind.Streets, profile = profile))
+            SegmentKind.Street -> Segment.StreetZone(id, p, p, ZoneDefinition(entry = p, exit = p, kind = ZoneKind.Streets, profile = profile))
             SegmentKind.Pause -> Segment.Pause(id, p)
         }
         return copy(segments = listOf(seg) + segments, anchorIsRealLocation = false).normalized()

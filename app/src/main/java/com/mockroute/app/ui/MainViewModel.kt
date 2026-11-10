@@ -297,7 +297,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             is com.mockroute.core.timeline.Segment.StreetZone -> {
                 zone.lockEntry = lockStart
                 zone.lockExit = lockEnd
-                zone.load(seedFirstCorner(seg.zone, seg.start, lockStart).copy(entry = seg.start, exit = seg.end, kind = com.mockroute.core.zone.ZoneKind.Streets))
+                // Street zones: corners are free; the fixed entry only has to end up inside the closed shape.
+                zone.load(seg.zone.copy(entry = seg.start, exit = seg.end, kind = com.mockroute.core.zone.ZoneKind.Streets))
                 _zonePlanSettings.value = seg.settings ?: SegmentPlanSettings.streetDefaults(seg.zone.profile)
                 editor.setMode(EditMode.Indoor, null)
             }
@@ -307,7 +308,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** A fixed entry becomes the shape's first corner when there's no shape yet (so it's on the edge by construction). */
     private fun seedFirstCorner(d: com.mockroute.core.zone.ZoneDefinition, entry: com.mockroute.core.geo.LatLon, locked: Boolean) =
-        if (locked && d.vertices.isEmpty()) d.copy(vertices = listOf(entry)) else d
+        if (locked && d.vertices.isEmpty() && d.kind == com.mockroute.core.zone.ZoneKind.Indoor) d.copy(vertices = listOf(entry)) else d
 
     /** Letters of the step being edited ("C" → "D"), for the editors' markers; ("A", "B") otherwise. */
     fun editingLabels(): Pair<String, String> {

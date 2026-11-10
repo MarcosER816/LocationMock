@@ -92,7 +92,8 @@ fun ZoneSheet(
                     Text(
                         if (def.closed) "Shape closed (${area(state)}). Drag corners to adjust, or reopen to add corners."
                         else "Tap the map to add corners (${def.vertices.size}). Drag a corner to move it. " +
-                            "Tap the first corner (or Close shape) to finish.",
+                            "Tap the first corner (or Close shape) to finish." +
+                            if (streets && (z.lockEntry || z.lockExit)) " Draw the shape around the fixed point: it only closes with that point inside or on the edge." else "",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     state.problem?.takeIf { def.vertices.size >= 3 }?.let {

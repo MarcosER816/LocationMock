@@ -69,6 +69,10 @@ class TimelineRulesTest {
         // New zones start with their fixed entry as the first corner.
         val z = t.add(SegmentKind.Indoor, "z").segments.last() as Segment.IndoorZone
         assertEquals(listOf(ll(200.0, 0.0)), z.zone.vertices)
+        // Street zones get no seeded corner (the entry may be anywhere inside); the entry is still the fixed point.
+        val sz = t.add(SegmentKind.Street, "sz").segments.last() as Segment.StreetZone
+        assertTrue(sz.zone.vertices.isEmpty())
+        assertEquals(ll(200.0, 0.0), sz.zone.entry)
     }
 
     @Test

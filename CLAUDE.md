@@ -21,6 +21,8 @@ Builds run in GitHub Actions; the user installs the debug APK artifact.
    mixture of 2D Gaussians (3D preview); same settings, a_max default = walking.
 6. STREET ZONE: larger polygon; wander only on OSM streets inside it (Overpass graph); A/B inside or on edge,
    NEVER outside (editors refuse shapes that leave a fixed point outside; planning refuses too).
+   In a timeline the indoor zone's fixed entry is its first corner; a street zone's corners are all free and the
+   shape only closes with the fixed entry inside or on the edge.
 7. TIMELINE: chain segments; B of segment i == A of segment i+1 (enforced); first A = real location captured BEFORE
    mocking (editable). Points are labelled A, B, C, D… Points shared by two steps are FIXED (no editor may move them;
    to change one, delete the steps after it); only the first and last point move. Steps are added/removed only at
