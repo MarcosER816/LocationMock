@@ -1,13 +1,35 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 2 (routing & tracing) — 0.2.2 pending phone re-check. Stage 1 verified on device._
+_Last updated: 2026-11-10 — Stage 3 (distributions + feasibility UI) — 0.3.0 built, CI; awaiting phone test. Stages 1–2 verified on device (2: A/B follow map ✅)._
 
 ## Done
+### Stage 3 — distributions + feasibility UI (0.3.0)
+- **Segment sheet:** a status line ("✓ 3–7 km/h · 0:20–0:35" or "✗ Not feasible — tap to fix") and a
+  **Speed & time…** button that opens the Plan screen.
+- **Plan screen** (`ui/PlanScreen.kt`):
+  - **Feasibility banner.** Green: "Needs ≥ X km/h average to arrive by t_max" plus the fastest physical time.
+    Red: each issue explained. For TooSlow/NoSpeed it shows the **coupled sliders** (v_max, t_max) with
+    **Apply**. If the route is too long even at (100 km/h, 6:00), it shows "Route too long for the caps" and no
+    sliders.
+  - **Speed card:** range slider 0–100 km/h (1 km/h steps), Mean/Mode toggle, centre slider, shape k slider
+    0.5–30 (0.5 steps), live PDF chart with a dashed mean marker and an x axis in km/h. A warning appears when the
+    requested mean/mode can't be reached with that shape.
+  - **Time card:** the same, 0:00–6:00 in whole minutes, labels h:mm.
+  - **Acceleration card:** preset chips (the current profile's first) with source notes, plus a free numeric a_max
+    field (> 0, uncapped). Switching Walk/Car/Bus in the sheet selects that profile's default preset.
+  - "Reset to <profile> defaults".
+- **Persistence:** `SegmentPlanSettings` JSON in DataStore (`segment_plan_v1`), saved debounced 500 ms. There is
+  one "current segment" until the timeline (Stage 8) introduces a list.
+- **Chart performance** (`ui/GammaChart.kt`): the density is sampled once per distribution (160 bins, in
+  `remember`). Paths/strokes are built in `drawWithCache`, which only re-runs on a size or data change, so the
+  per-frame `onDrawBehind` allocates nothing. Axis text is ordinary `Text` (no text measuring in draw). A shape < 1
+  spike at lo is capped at 3× the 90th percentile for display.
+
 ### Stage 2 — routing & tracing
 - **Mode toolbar** (top of map): Explore | A → B | Streets | Free draw.
-  - **A → B (point-to-point):** A defaults to the last real location. Tapping the map sets B. A and B are
-    draggable Compose overlay handles (`EndpointHandles`/`DragHandle`): the drop point is converted with
-    `CameraProjection.positionFromScreenLocation`. "Move A" makes the next tap set A, and "A = my location" resets it.
+  - **A → B (point-to-point):** A defaults to the last real location. Tapping the map sets B. A and B are **map
+    layers** (`EndpointLayers`) dragged via `Modifier.endpointDrag` (see 0.2.1/0.2.2 notes below; the original
+    Compose overlay handles were removed). "Move A" makes the next tap set A, and "A = my location" resets it.
     Requests are debounced 400 ms and the newest wins (`collectLatest`).
   - **Streets (street-by-street):** each tap appends a waypoint, and the pair (previous, new) is routed as one leg.
     Legs are concatenated with the duplicate joint dropped. Undo removes the last waypoint and leg (cancelling its
@@ -69,6 +91,44 @@ _Last updated: 2026-11-10 — Stage 2 (routing & tracing) — 0.2.2 pending phon
 ### Stage 0
 Gradle multi-module skeleton, version catalog, wrapper, stable debug keystore, CI artifact `app-debug`,
 optional API-key secrets → BuildConfig.
+
+## Stage 3 API (for Stage 4)
+All in `:core`, SI units (m, m/s, s, m/s²), pure Kotlin.
+
+**`dist.BoundedGamma`**: X = lo + Y, Y ~ Gamma(k, θ) truncated to [0, W], W = hi − lo. Immutable.
+- Builders: `withMean(lo, hi, k, mean)` (θ by bisection on log θ so the **truncated** mean matches; it is clamped
+  to the reachable `maxMean = lo + W·k/(k+1)`; check `.mean`), `withMode(lo, hi, k > 1, mode)` (θ = mode/(k−1)),
+  `fromMoments(lo, hi, meanY, varY)` and `shapeScaleFromMoments(m, s²) = (m²/s², s²/m)`, `pointMass(x)`. lo == hi
+  gives a point mass.
+- `pdf(x)` (normalised by F(W) − F(0)), `cdf(x)`, `quantile(p)` (commons-math3 inverse + Newton polish, with a
+  bisection fallback in extreme tails), `sample(kotlin.random.Random)` (inverse CDF), `mean` (closed form
+  kθ·P(k+1, W/θ)/P(k, W/θ)), `mode`, `shape`, `scale`, `lo`, `hi`, `width`, `isPointMass`.
+  `MIN_SHAPE = 0.5`, `MAX_SHAPE = 30`.
+- Stage 4: sample **T** with `settings.time.distribution().sample(rng)`. Use `settings.speed.distribution()` for
+  the speed marginal (Gaussian copula: u = Φ(z_OU) → `quantile(u)`).
+
+**`plan.Feasibility`**
+- `tMinPhys(d, v, a)` = d/v + v/a if d ≥ v²/a, else 2√(d/a) (trapezoid/triangle, rest-to-rest).
+- `absoluteMinTime(d, a)` = 2√(d/a).
+- `requiredV(d, t, a)` = 2d/(t + √(t² − 4d/a)) (closed-form inverse; +∞ if t < 2√(d/a)).
+- `check(d, vMax, tMax, vMin, tMin, aMax): Result(feasible, issues: List<Issue>, tMinPhysS, requiredAverageMps,
+  displayRuleOk)`. Issues: TooSlow, TooShort (d < vMin·tMin), TimeRangeInverted, SpeedRangeInverted, NoSpeed.
+  `displayRuleOk` = d ≤ v_max·t_max (the user's "max_velocity/max_time" corrected; display only).
+
+**`plan.CoupledSliders(d, aMax, vMax, tMax)`**: immutable.
+- `withVMax(v)` / `withTMax(t)`: a decrease pushes the other to exactly requiredT / requiredV; an increase leaves
+  it alone. Clamped to the floors `vFloor = requiredV(6 h)` and `tFloor = requiredT(100 km/h)` and to the caps
+  `V_CAP = 100 km/h`, `T_CAP = 6 h`.
+- `tooLongForCaps` (both setters become no-ops). `isFeasible`.
+- `propose(d, aMax, vMax, tMax)`: keep v_max, t_max = requiredT rounded up to the minute.
+
+**`plan.AccelerationPreset`**: Walking 1.0, CarNormal 1.3, CarBrisk 2.2, CarFull 3.5, BusComfort 1.0, BusMax 2.0
+(each with a note). `defaultFor(profile)`, `forProfile(profile)`.
+
+**`plan.SegmentPlanSettings(speed: GammaSetting, time: GammaSetting, aMaxMps2, accelPreset?)`**: @Serializable.
+`GammaSetting(lo, hi, center, shape, centerKind = Mean|Mode).distribution()` (mode with k ≤ 1 falls back to mean).
+Also `withRange()`, `vMin/vMax/tMin/tMax`, `feasibility(d)`, `applyCoupled(c)` and `defaults(profile, d)`:
+Walk 3–6.5 km/h (mean 5), Car 10–60 (35), Bus 5–45 (20); time = [0.8×, 1.5×] of d/mean, whole minutes.
 
 ## Routing: endpoints, quotas, caching
 | Provider | Endpoint | Auth | Profiles (Walk / Car / Bus) | Free quota |
@@ -199,15 +259,29 @@ list of `LatLon`.
 - The tall segment sheet covers part of the map on small screens.
 
 ## Next steps
-- Run the Stage 2 phone test script below.
-- Stage 3: distributions + feasibility UI (use `RouteResult.distanceM`, `RouteGeometry.densify()`).
+- Run the Stage 3 phone test script below (and the 0.2.2 re-check if not done).
+- Stage 4: speed profile + gradient plan + playback (sample T from `time.distribution()`; Gaussian-copula OU on
+  `speed.distribution()`; accel limiting with `aMaxMps2`; bisection to hit T; colour the route by speed).
+
+## How to verify on phone (Stage 3 test script)
+1. Install 0.3.0 (Settings → About). Draw a route (A → B, Walk, ~1–2 km).
+2. The sheet shows "✓ 3–7 km/h · h:mm–h:mm". Tap **Speed & time…**.
+3. Speed card: move the range, the mean slider and the shape slider. The curve updates smoothly; the dashed line
+   is the mean. Switch to **Mode**: the peak follows the slider.
+4. Time card: same, labels in h:mm.
+5. Acceleration: tap the presets; type 1.75 in the field (it stays as typed).
+6. Make it infeasible: set the time range to 0:01–0:02. The banner turns red with an explanation and two linked
+   sliders. Drag **v_max down**: t_max rises. Drag **t_max down**: v_max rises. Drag either **up**: the other
+   doesn't move. Tap **Apply**: the banner turns green and the cards show the new values.
+7. Back to the map → the sheet line updates. Close and reopen the app → the settings are kept.
+8. Draw a ~700 km Car route (two distant cities) → "Route too long for the caps", with no sliders.
 
 ## Build steps
 - Agent sandbox: `./gradlew :core:test` (no Android SDK needed). For `:app:assembleDebug`, install
   `platforms;android-36` + `build-tools;36.0.0` with sdkmanager and point `sdk.dir` in `local.properties` at it.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
-- Verified 2026-11-09 in sandbox: `:core:test` 24/24 passed; `:app:lintDebug` 0 errors; `:app:assembleDebug` OK.
+- Verified 2026-11-10 in sandbox: `:core:test` 48/48 passed (BoundedGamma, Feasibility, CoupledSliders, settings, earlier stages); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK.
 
 ## 0.2.2 (2026-11-10)
 - **Phone round 2:** the A/B markers now follow the map (map-layer approach confirmed ✅).

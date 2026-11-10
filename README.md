@@ -45,6 +45,12 @@ Use the toolbar at the top of the map:
 - **Free draw**: same as Streets, but with straight lines (no snapping).
 Then **Play at constant speed** moves your mocked location along the route.
 
+## Speed & time (Stage 3)
+In the route sheet tap **Speed & time…**. Set the speed range (km/h) and the time range (h:mm), and shape each one
+with a mean/mode and a "shape" (higher = narrower), shown as live curves. Pick an acceleration preset or type
+a value. A green banner means the segment is possible. A red one explains why it isn't and offers two linked
+sliders (top speed ↔ max time) plus **Apply**.
+
 ## Optional API keys (stored only on your phone)
 Street routing needs a free key, pasted in **MockRoute → Settings ⚙ → Routing** (saved as you type, kept only on
 the phone; never in this repository or the APK):
