@@ -9,9 +9,9 @@ Tick a stage (`[x]`) only when its acceptance checks pass and CI is green. Detai
   UI; mock a fixed point; "not selected as mock app" explanation + deep link; one-time disclaimer.
 - [x] **Stage 2 — Routing & tracing.** _(phone-tested 2026-11-09; 0.2.1 marker/key fixes pending re-check — see HANDOFF.md)_ `RoutingProvider` (ORS default, GraphHopper alt), point-to-point best route,
   street-by-street tracing snapped to roads, straight-line/hand-drawn fallback with no keys; response caching.
-- [x] **Stage 3 — Distributions + feasibility UI.** _(0.3.0; CI; phone test script in HANDOFF.md)_ Truncated gamma for speed/time; v_min/v_max, t_min/t_max, a_max
+- [x] **Stage 3 — Distributions + feasibility UI.** _(0.3.0; phone-tested 2026-11-10)_ Truncated gamma for speed/time; v_min/v_max, t_min/t_max, a_max
   presets (Walk/Car/Bus); feasibility rules; coupled (v_max, t_max) double slider.
-- [ ] **Stage 4 — Speed profile + gradient plan + playback.** Sample T; Gaussian-copula OU speed profile + accel
+- [x] **Stage 4 — Speed profile + gradient plan + playback.** _(0.4.0; CI; phone test script in HANDOFF.md)_ Sample T; Gaussian-copula OU speed profile + accel
   limiting + bisection to hit T; green→yellow→red route rendering with duration label; play the plan through the
   mock service at 1 Hz.
 - [ ] **Stage 5 — Traffic-aware car/bus.** `TrafficProvider` (TomTom default, Google optional); Car/Bus auto-settings.

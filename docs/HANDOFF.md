@@ -1,8 +1,40 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 3 (distributions + feasibility UI) — 0.3.0 built, CI; awaiting phone test. Stages 1–2 verified on device (2: A/B follow map ✅)._
+_Last updated: 2026-11-10 — Stage 4 (speed profile + gradient plan + playback) — 0.4.0 built, CI; awaiting phone test. Stages 1–3 verified on device._
 
 ## Done
+### Stage 4 — speed profile, gradient plan, playback (0.4.0)
+- **`SpeedProfileGenerator`** (`:core`, deterministic per seed) turns route + `SegmentPlanSettings` into a
+  `SpeedPlan`:
+  1. **T:** sampled from the time BoundedGamma, or its mean with **Lock time**. Clamped to
+     [tMinPhys(v_max), t_max] and to ≤ d/v_min when v_min > 0.
+  2. **Nodes:** Δs = 5 m up to 10 km, otherwise 10 m.
+  3. **Latent OU z(s):** ρ = e^(−Δs/L), with L = 150 m walk / 400 m car & bus (`SegmentPlanSettings.correlationLengthM`
+     overrides; no UI yet).
+  4. **Copula:** v_i = G⁻¹(Φ(z_i + δ)), clipped to [max(v_min, 0.3), v_max]. **G is the distance-weighted marginal
+     g(v) ∝ v·f(v)**, so the *time-weighted* speed histogram equals the user's f (each Δs lasts Δs/v). z → v is a
+     4801-point lookup table, so the bisection never inverts a gamma.
+  5. **Curvature cap** √(2·R) for car/bus (R = circumradius ±15 m).
+  6. **Boundary envelope:** nodes are raised to √(v₀² − 2a·s) / √(v_end² − 2a·(d−s)) so a non-zero v₀/v_end can
+     be met exactly.
+  7. **Accel limiting:** forward then backward pass, |v_{i+1}² − v_i²| ≤ 2aΔs.
+  8. **Bisection on δ ∈ [−6, 6]** until |τ − T| < 0.05 s. If T is out of reach, returns the closest plan plus a
+     `warning`.
+- **`PlanTrajectory`:** binary search on t_i, constant-acceleration interpolation (continuous v, piecewise-constant
+  a). Played by the service via `TrajectorySpec.Plan`, handed over in-process (`PlanHandoff`) because plans are too
+  big for Intent extras.
+- **Map:** the route is drawn as ~30 m LineString chunks (≤ ~1000 features) with a `color` property and
+  data-driven `line-color` (`feature["color"].convertToColor()`). Plus a **midpoint pill** (SymbolLayer, Noto Sans
+  Bold with a white halo, "1 h 12 min · 5.1 km/h"), a **legend** (top-left, green/yellow/red with km/h values), and
+  **tap on the line** (within 20 dp) → "1.2 km from start · 4.8 km/h · ETA +0:14" plus a marker. In A → B, a tap
+  near the line inspects; elsewhere it still moves B.
+- **Sheet:** "Plan: <label> · seed …", warning if any, a **speed-over-time mini chart** (Canvas; down-sampled
+  once, Path in drawWithCache), **Re-roll** (new seed), **Lock time** switch, **Play plan**. The plan regenerates
+  automatically (debounced 250 ms, `Dispatchers.Default`, newest wins) on any route/settings/profile/seed change.
+  The constant-speed button is gone (`PolylineTrajectory` stays in core).
+- **Notification** for timed trajectories: progress bar, "x.x km/h · 45 % · 0:12:30 left". The status card shows
+  the remaining distance.
+
 ### Stage 3 — distributions + feasibility UI (0.3.0)
 - **Segment sheet:** a status line ("✓ 3–7 km/h · 0:20–0:35" or "✗ Not feasible — tap to fix") and a
   **Speed & time…** button that opens the Plan screen.
@@ -91,6 +123,32 @@ _Last updated: 2026-11-10 — Stage 3 (distributions + feasibility UI) — 0.3.0
 ### Stage 0
 Gradle multi-module skeleton, version catalog, wrapper, stable debug keystore, CI artifact `app-debug`,
 optional API-key secrets → BuildConfig.
+
+## Stage 4 API — Plan (for Stages 5–8)
+- `SpeedProfileGenerator.generate(Request(geometry, settings, profile, seed, v0 = 0, vEnd = 0, lockTime = false,
+  correlationLengthM = null, curvatureCap = profile != Walk, stepM = null)): SpeedPlan`.
+  `defaultCorrelationLength(profile)`; constants `MIN_SPEED_MPS = 0.3`, `DELTA_RANGE = 6`.
+- `SpeedPlan(s[], t[], v[], targetTimeS, seed, delta, warning?, generationMs)`: `distanceM`, `totalTimeS`,
+  `averageSpeedMps`, `min/maxSpeedMps`, `stateAtTime(t) → Kin(distanceM, speedMps, accelMps2)`,
+  `timeAtDistance(s) → (t, v)`, `segmentAtTime`, `segmentAtDistance`, `contentEquals`.
+- `PlanTrajectory(geometry, plan, altitude, accuracy)` implements `Trajectory`, plus `distanceAt(t)`.
+- Timeline (Stage 8): chain segments by passing the previous plan's `v.last()` as the next `v0`.
+- Traffic (Stage 5): adjust `settings` or add a per-node cap array (like the curvature cap) before the accel
+  passes.
+
+### Colour mapping
+`SpeedColorScale(low, mid, high)`: green `#1E9E48` at low, yellow `#F9C21B` at mid, red `#E5372E` at high,
+interpolated in **OKLab** (sRGB ↔ linear ↔ LMS ↔ Lab, Björn Ottosson's matrices). `forPlan(plan, settings)` sets:
+- low = the plan's slowest cruising speed (nodes below the v_min/0.3 floor, i.e. the accel ramps, are ignored),
+- mid = the speed distribution's mean,
+- high = the plan's fastest speed (widened so low ≤ mid ≤ high).
+Chunk colour = the chunk's time-averaged speed (length / crossing time).
+
+### Measured (sandbox JVM, 2026-11-10)
+- **20 km car plan (2000 nodes, curvature cap on): ≈ 7 ms** per plan after warm-up. Expect a few × on the phone,
+  still well under the 250 ms debounce.
+- **KS statistic** of the time-weighted speed histogram (40 plans × 40 km, δ = 0) against the speed BoundedGamma:
+  **0.016**.
 
 ## Stage 3 API (for Stage 4)
 All in `:core`, SI units (m, m/s, s, m/s²), pure Kotlin.
@@ -259,9 +317,20 @@ list of `LatLon`.
 - The tall segment sheet covers part of the map on small screens.
 
 ## Next steps
-- Run the Stage 3 phone test script below (and the 0.2.2 re-check if not done).
-- Stage 4: speed profile + gradient plan + playback (sample T from `time.distribution()`; Gaussian-copula OU on
-  `speed.distribution()`; accel limiting with `aMaxMps2`; bisection to hit T; colour the route by speed).
+- Run the Stage 4 phone test script below.
+- Stage 5: traffic-aware car/bus (TomTom default, Google optional, keys device-only).
+
+## How to verify on phone (Stage 4 test script)
+1. Install 0.4.0 (Settings → About). Draw an A → B Walk route of 1–2 km.
+2. The route turns into a **green → yellow → red gradient**, with a **pill at the midpoint** ("24 min · 4.9 km/h")
+   and a legend top-left.
+3. The sheet shows "Plan: … · seed …" and a speed-over-time chart. **Re-roll**: the colours and the chart change,
+   and the total time usually changes too. **Lock time** on: re-rolls keep the same duration (the time mean).
+4. Tap the coloured line: a white marker plus "x km from start · y km/h · ETA +h:mm".
+5. Speed & time… → change the range or shape → back: the plan updates within about ½ s.
+6. **Play plan.** The notification shows the progress bar, speed and time left. In **Google Maps** your dot moves
+   **slowly through green parts and faster through red parts**, starting and stopping smoothly. Stop when done.
+7. Car route of ~10–20 km: the plan appears quickly (no freeze) and slows down in sharp bends.
 
 ## How to verify on phone (Stage 3 test script)
 1. Install 0.3.0 (Settings → About). Draw a route (A → B, Walk, ~1–2 km).
@@ -281,7 +350,7 @@ list of `LatLon`.
   `platforms;android-36` + `build-tools;36.0.0` with sdkmanager and point `sdk.dir` in `local.properties` at it.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
-- Verified 2026-11-10 in sandbox: `:core:test` 48/48 passed (BoundedGamma, Feasibility, CoupledSliders, settings, earlier stages); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK.
+- Verified 2026-11-10 in sandbox: `:core:test` 60/60 passed (incl. SpeedProfileGenerator invariants, determinism, KS, curvature, PlanTrajectory, colour scale, chunks); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK.
 
 ## 0.2.2 (2026-11-10)
 - **Phone round 2:** the A/B markers now follow the map (map-layer approach confirmed ✅).

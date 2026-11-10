@@ -45,6 +45,12 @@ Use the toolbar at the top of the map:
 - **Free draw**: same as Streets, but with straight lines (no snapping).
 Then **Play at constant speed** moves your mocked location along the route.
 
+## Plans (Stage 4)
+Once the speed & time settings are feasible, the route is coloured by speed: green = slow, yellow = average,
+red = fast. A label shows the total time. Tap the line to see the speed and ETA at that spot. **Re-roll**
+generates a different plan; **Lock time** keeps the duration fixed. **Play plan** moves your mocked location along
+the route with that speed profile.
+
 ## Speed & time (Stage 3)
 In the route sheet tap **Speed & time…**. Set the speed range (km/h) and the time range (h:mm), and shape each one
 with a mean/mode and a "shape" (higher = narrower), shown as live curves. Pick an acceleration preset or type
