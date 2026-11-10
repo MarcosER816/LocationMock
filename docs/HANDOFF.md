@@ -1150,3 +1150,11 @@ Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in
 - Build: `:core:test` and `:app:assembleDebug` pass locally (Android SDK installed in the session).
 - **Next:** check on the POCO — readability of POI icons on the dark map, 3-D performance in dense city centres
   at zoom 14–15 (if it stutters, raise the 3-D minzoom in the script to 15), and how the new panels feel.
+
+## 1.1.1 — buildings without a 3-D model (user report, 2026-11-10)
+- Some buildings vanished from zoom 14 on: the 3-D layer skips buildings flagged `hide_3d` (and the flat layer
+  stopped at zoom 14). Now the flat `building` layer draws **every** building at **all zooms ≥ 13**, under the
+  3-D layer, so anything without a 3-D model still shows as a normal flat building. Flat buildings are also fully
+  opaque at zoom 13 (were 60 %, which looked like buildings fading out when zooming away).
+- Limit: OpenFreeMap tiles only carry buildings from zoom 13, and at zoom 13 the smallest ones are left out of the
+  tiles; below zoom 13 no building can be shown with this map source.

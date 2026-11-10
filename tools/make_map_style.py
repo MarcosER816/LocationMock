@@ -8,7 +8,7 @@ Usage:
 Since 1.1.0 the source is OpenFreeMap's "liberty" style (not "dark"): it carries every OpenMapTiles layer a
 Google-Maps-like map needs (all buildings, 3-D heights, shops/POIs with icons, landuse kinds, bridges/tunnels,
 rail, road shields). This script repaints it on MockRoute's dark base and adds a few layers:
-  * buildings from zoom 13 (flat) and in 3-D from zoom 14, LIGHTER than the streets, taller = lighter;
+  * every building flat from zoom 13 at all zooms (also those with no 3-D model) and in 3-D from zoom 14, LIGHTER than the streets, taller = lighter;
   * POI labels coloured by category (food orange, shops blue, parks green, health pink, transit sky,
     culture/education lilac), like Google Maps;
   * POIs from zoom 14 (all ranks by 16), house numbers from zoom 17;
@@ -135,12 +135,15 @@ for layer in d["layers"]:
     elif lid in ("road_one_way_arrow", "road_one_way_arrow_opposite"):
         paint["icon-opacity"] = 0.45
     elif lid == "building":
-        # Flat footprints from zoom 13 (as soon as the tiles carry them) until the 3-D layer takes over.
+        # Flat footprints of EVERY building from zoom 13 (the first zoom the tiles carry buildings) at all zooms,
+        # drawn under the 3-D layer. The 3-D layer skips buildings flagged hide_3d (and ones with odd heights),
+        # so without this they would vanish from zoom 14 on; here they always show as a normal flat building.
         layer["minzoom"] = 13
-        layer["maxzoom"] = 14
+        layer.pop("maxzoom", None)
+        layer.pop("filter", None)
         paint["fill-color"] = "#485363"
         paint["fill-outline-color"] = "#5A6677"
-        paint["fill-opacity"] = ["interpolate", ["linear"], ["zoom"], 13, 0.6, 14, 1]
+        paint["fill-opacity"] = 1
     elif lid == "building-3d":
         layer["minzoom"] = 14
         paint["fill-extrusion-color"] = ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 6],
