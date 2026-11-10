@@ -3,6 +3,8 @@ package com.mockroute.app.sim
 import android.content.Intent
 import com.mockroute.core.geo.LatLon
 import com.mockroute.core.route.RouteGeometry
+import com.mockroute.core.plan.SpeedPlan
+import com.mockroute.core.trajectory.PlanTrajectory
 import com.mockroute.core.trajectory.PolylineTrajectory
 import com.mockroute.core.trajectory.StaticTrajectory
 import com.mockroute.core.trajectory.StraightLineTrajectory
@@ -34,6 +36,16 @@ sealed interface TrajectorySpec {
         override val label: String get() = "Following route"
     }
 
+    /** Stage 4: a generated speed plan along a route. Too big for Intent extras → handed over in-process. */
+    data class Plan(
+        val geometry: RouteGeometry,
+        val plan: SpeedPlan,
+        override val altitudeM: Double,
+    ) : TrajectorySpec {
+        override fun build(): Trajectory = PlanTrajectory(geometry, plan, altitudeM)
+        override val label: String get() = "Following plan"
+    }
+
     fun writeTo(intent: Intent): Intent = intent.apply {
         putExtra(EXTRA_ALT, altitudeM)
         when (val s = this@TrajectorySpec) {
@@ -48,6 +60,10 @@ sealed interface TrajectorySpec {
                 putExtra(EXTRA_FROM_LON, s.from.lon)
                 putExtra(EXTRA_TO_LAT, s.to.lat)
                 putExtra(EXTRA_TO_LON, s.to.lon)
+            }
+            is Plan -> {
+                putExtra(EXTRA_TYPE, TYPE_PLAN)
+                putExtra(EXTRA_PLAN_ID, PlanHandoff.put(s))
             }
             is Polyline -> {
                 putExtra(EXTRA_TYPE, TYPE_POLYLINE)
@@ -71,6 +87,8 @@ sealed interface TrajectorySpec {
         private const val TYPE_STATIC = "static"
         private const val TYPE_LINE = "line"
         private const val TYPE_POLYLINE = "polyline"
+        private const val TYPE_PLAN = "plan"
+        private const val EXTRA_PLAN_ID = "spec_plan_id"
         private const val EXTRA_SPEED = "spec_speed"
         private const val EXTRA_POINTS = "spec_points"
 
@@ -84,6 +102,7 @@ sealed interface TrajectorySpec {
                     to,
                     alt,
                 )
+                TYPE_PLAN -> PlanHandoff.get(intent.getLongExtra(EXTRA_PLAN_ID, -1))
                 TYPE_POLYLINE -> {
                     val flat = intent.getDoubleArrayExtra(EXTRA_POINTS) ?: return null
                     val pts = (0 until flat.size / 2).map { LatLon(flat[2 * it], flat[2 * it + 1]) }
@@ -93,4 +112,25 @@ sealed interface TrajectorySpec {
             }
         }.getOrNull()
     }
+}
+
+/**
+ * In-process hand-over of large specs from the UI to [com.mockroute.app.mock.MockLocationService] (same process).
+ * Intent extras would hit Binder's ~1 MB transaction limit for long plans. If the process dies the service is
+ * not restarted (START_NOT_STICKY), so losing this map is harmless.
+ */
+object PlanHandoff {
+    private val specs = LinkedHashMap<Long, TrajectorySpec.Plan>()
+    private var nextId = 1L
+
+    @Synchronized
+    fun put(spec: TrajectorySpec.Plan): Long {
+        val id = nextId++
+        specs[id] = spec
+        while (specs.size > 4) specs.remove(specs.keys.first())
+        return id
+    }
+
+    @Synchronized
+    fun get(id: Long): TrajectorySpec.Plan? = specs[id]
 }

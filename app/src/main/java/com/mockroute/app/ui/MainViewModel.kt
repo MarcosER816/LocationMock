@@ -128,6 +128,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- Stage 4: generated speed plan ------------------------------------------------------------
+
+    private val routeForPlan: StateFlow<Pair<com.mockroute.core.route.RouteGeometry?, com.mockroute.core.route.RoutingProfile>> =
+        editor.state.map { it.result?.takeUnless { r -> it.loading }?.geometry to it.profile }
+            .distinctUntilChanged()
+            .stateIn(viewModelScope, SharingStarted.Eagerly, null to com.mockroute.core.route.RoutingProfile.Walk)
+
+    val planner = PlanController(viewModelScope, routeForPlan, _plan)
+
+    fun playPlan() {
+        val ready = planner.status.value as? PlanStatus.Ready
+        if (ready == null) {
+            _message.value = "No plan yet — draw a feasible route first"
+            return
+        }
+        startWith { alt, _ -> TrajectorySpec.Plan(ready.generated.geometry, ready.generated.plan, alt) }
+    }
+
     /** Ensures a plan exists before the plan screen opens. */
     fun ensurePlan() {
         if (_plan.value == null) _plan.value = defaultPlan()

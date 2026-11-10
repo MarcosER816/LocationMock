@@ -61,6 +61,9 @@ import org.maplibre.compose.expressions.value.LineJoin
 import org.maplibre.compose.layers.CircleLayer
 import org.maplibre.compose.layers.LineLayer
 import org.maplibre.compose.layers.SymbolLayer
+import org.maplibre.compose.expressions.dsl.feature
+import org.maplibre.compose.expressions.dsl.convertToColor
+import org.maplibre.compose.expressions.dsl.offset
 import org.maplibre.compose.expressions.dsl.format
 import org.maplibre.compose.expressions.dsl.span
 import androidx.compose.ui.unit.em
@@ -89,6 +92,11 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
     val message by vm.message.collectAsStateWithLifecycle()
     val editor by vm.editor.state.collectAsStateWithLifecycle()
     val plan by vm.plan.collectAsStateWithLifecycle()
+    val planStatus by vm.planner.status.collectAsStateWithLifecycle()
+    val planSeed by vm.planner.seed.collectAsStateWithLifecycle()
+    val lockTime by vm.planner.lockTime.collectAsStateWithLifecycle()
+    // Tap on the plan line → speed & ETA at that point.
+    var inspect by remember { mutableStateOf<PlanInspection?>(null) }
     val scope = rememberCoroutineScope()
     val editing = editor.mode != EditMode.Explore
 
@@ -126,10 +134,17 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
         if (styleIndex < TileStyle.chain.lastIndex) styleIndex++
     }
     val currentOnClick by rememberUpdatedState { pos: Position, _: DpOffset ->
-        if (vm.editor.state.value.mode != EditMode.Explore) {
+        val ready = vm.planner.status.value as? PlanStatus.Ready
+        val hit = ready?.let { inspectPlan(it.generated, LatLon(pos.latitude, pos.longitude), cameraState.metersPerDpAtTarget * 20) }
+        if (hit != null) {
+            inspect = hit
+            ClickResult.Consume
+        } else if (vm.editor.state.value.mode != EditMode.Explore) {
+            inspect = null
             vm.editor.onMapTap(LatLon(pos.latitude, pos.longitude))
             ClickResult.Consume
         } else {
+            inspect = null
             ClickResult.Pass
         }
     }
@@ -176,14 +191,50 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                 cap = const(LineCap.Round),
                 join = const(LineJoin.Round),
             )
+            val ready = planStatus as? PlanStatus.Ready
             LineLayer(
                 id = "edited-route",
                 source = routeSource,
+                visible = ready == null,
                 color = const(if (editedResult?.isFallback == true) FallbackGrey else RouteBlue),
                 width = const(5.dp),
                 cap = const(LineCap.Round),
                 join = const(LineJoin.Round),
             )
+            // Stage 4: speed gradient (data-driven colour per ~30 m chunk) + midpoint duration pill.
+            val gradientSource = rememberGeoJsonSource(GeoJsonData.JsonString(ready?.generated?.chunksJson ?: EMPTY_FC))
+            LineLayer(
+                id = "plan-gradient",
+                source = gradientSource,
+                color = feature["color"].convertToColor(),
+                width = const(5.dp),
+                cap = const(LineCap.Round),
+                join = const(LineJoin.Round),
+            )
+            val midSource = rememberGeoJsonSource(GeoJsonData.JsonString(pointJson(ready?.generated?.midpoint)))
+            SymbolLayer(
+                id = "plan-label",
+                source = midSource,
+                textField = format(span(const(ready?.generated?.label ?: ""))),
+                textFont = const(listOf("Noto Sans Bold")),
+                textSize = const(1.0.em),
+                textColor = const(Color(0xFF202124)),
+                textHaloColor = const(Color.White),
+                textHaloWidth = const(4.dp),
+                textOffset = offset(0.em, (-1.6).em),
+                textAllowOverlap = const(true),
+                textIgnorePlacement = const(true),
+            )
+            val inspectSource = rememberGeoJsonSource(GeoJsonData.JsonString(pointJson(inspect?.point)))
+            CircleLayer(
+                id = "plan-inspect",
+                source = inspectSource,
+                color = const(Color.White),
+                radius = const(7.dp),
+                strokeColor = const(Color(0xFF202124)),
+                strokeWidth = const(3.dp),
+            )
+
             val waypointSource = rememberGeoJsonSource(
                 GeoJsonData.JsonString(pointsJson(if (editor.mode == EditMode.Streets) editor.waypoints else emptyList())),
             )
@@ -250,6 +301,13 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             )
         }
 
+        (planStatus as? PlanStatus.Ready)?.let { r ->
+            SpeedLegend(
+                r.generated.scale,
+                Modifier.align(Alignment.TopStart).windowInsetsPadding(WindowInsets.safeDrawing).padding(start = 12.dp, top = 76.dp),
+            )
+        }
+
         // Top: mode toolbar, then the round buttons.
         Column(
             Modifier.align(Alignment.TopCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp),
@@ -291,6 +349,18 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
         Column(
             Modifier.align(Alignment.BottomCenter).fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars),
         ) {
+            inspect?.let { ins ->
+                Surface(
+                    Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                    shape = MaterialTheme.shapes.large,
+                    shadowElevation = 4.dp,
+                ) {
+                    Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(ins.text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { inspect = null }) { Text("OK") }
+                    }
+                }
+            }
             message?.let { msg ->
                 LaunchedEffect(msg) {
                     delay(4000)
@@ -310,6 +380,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     remainingM = when (val spec = sim.spec) {
                         is TrajectorySpec.StraightLine -> sim.current?.let { GeoMath.haversineMeters(it.position, spec.to) }
                         is TrajectorySpec.Polyline -> (spec.geometry.lengthM - sim.elapsedSeconds * spec.speedMps).coerceAtLeast(0.0)
+                        is TrajectorySpec.Plan -> (spec.plan.distanceM - spec.plan.stateAtTime(sim.elapsedSeconds).distanceM).coerceAtLeast(0.0)
                         else -> null
                     },
                     onPause = vm::pause,
@@ -327,11 +398,15 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
                     onPick = vm.editor::pickNext,
                     onUseRealA = { vm.editor.useRealLocationAsA(vm.realLatLon()) },
                     onStartAtReal = { vm.realLatLon()?.let(vm.editor::addWaypoint) },
-                    onSpeed = vm.editor::setPlaySpeed,
-                    onPlay = vm::playRoute,
                     onRetry = vm.editor::refresh,
                     plan = plan,
                     onOpenPlan = onOpenPlan,
+                    planStatus = planStatus,
+                    seed = planSeed,
+                    lockTime = lockTime,
+                    onReroll = vm.planner::reroll,
+                    onLockTime = vm.planner::setLockTime,
+                    onPlayPlan = vm::playPlan,
                 )
             }
             selected?.takeIf { !editing }?.let { p ->
@@ -356,6 +431,20 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
             )
         }
     }
+}
+
+class PlanInspection(val point: LatLon, val text: String)
+
+/** Nearest point of the plan to [tap] if within [thresholdM]: speed there and ETA from the start. */
+private fun inspectPlan(g: GeneratedPlan, tap: LatLon, thresholdM: Double): PlanInspection? {
+    val (along, off) = g.geometry.project(tap)
+    if (off > thresholdM.coerceAtLeast(5.0)) return null
+    val (t, v) = g.plan.timeAtDistance(along * g.plan.distanceM / g.geometry.lengthM)
+    val text = String.format(
+        Locale.US, "%s from start · %.1f km/h · ETA +%s",
+        formatDistance(along), v * 3.6, fmtHmm(t),
+    )
+    return PlanInspection(g.geometry.pointAtDistance(along).position, text)
 }
 
 @Composable

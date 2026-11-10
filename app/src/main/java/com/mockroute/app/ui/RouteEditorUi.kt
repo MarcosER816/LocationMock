@@ -95,11 +95,15 @@ fun SegmentSheet(
     onPick: (Endpoint) -> Unit,
     onUseRealA: () -> Unit,
     onStartAtReal: () -> Unit,
-    onSpeed: (Double) -> Unit,
-    onPlay: () -> Unit,
     onRetry: () -> Unit,
     plan: com.mockroute.core.plan.SegmentPlanSettings?,
     onOpenPlan: () -> Unit,
+    planStatus: PlanStatus,
+    seed: Long,
+    lockTime: Boolean,
+    onReroll: () -> Unit,
+    onLockTime: (Boolean) -> Unit,
+    onPlayPlan: () -> Unit,
 ) {
     val result = state.result
     Card(
@@ -182,20 +186,35 @@ fun SegmentSheet(
                 }
             }
 
-            // Temporary constant-speed playback.
+            // Stage 4: generated plan.
             if (result != null && result.geometry.size >= 2) {
-                Text(
-                    String.format(Locale.US, "Play speed: %.0f km/h · ≈ %s", state.playSpeedKmh,
-                        formatDuration(result.geometry.lengthM / (state.playSpeedKmh / 3.6))),
-                    style = MaterialTheme.typography.bodySmall,
-                )
-                Slider(
-                    value = state.playSpeedKmh.toFloat(),
-                    onValueChange = { onSpeed(it.roundToInt().toDouble()) },
-                    valueRange = 1f..100f,
-                )
-                Button(onClick = onPlay, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
-                    Text("Play at constant speed")
+                when (planStatus) {
+                    is PlanStatus.Ready -> {
+                        val g = planStatus.generated
+                        Text(
+                            "Plan: ${g.label} · seed ${seed % 10000}",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        g.plan.warning?.let {
+                            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
+                        SpeedOverTimeChart(g.plan, g.scale, Modifier.fillMaxWidth())
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedButton(onClick = onReroll) { Text("Re-roll") }
+                            Text("Lock time", style = MaterialTheme.typography.bodyMedium)
+                            Switch(checked = lockTime, onCheckedChange = onLockTime)
+                        }
+                        Button(onClick = onPlayPlan, enabled = !state.loading, modifier = Modifier.fillMaxWidth()) {
+                            Text("Play plan")
+                        }
+                    }
+                    PlanStatus.Generating -> Text("Generating plan…", style = MaterialTheme.typography.bodySmall)
+                    PlanStatus.Infeasible -> Text(
+                        "Fix speed & time to get a plan.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                    PlanStatus.NoRoute -> Unit
                 }
             }
         }

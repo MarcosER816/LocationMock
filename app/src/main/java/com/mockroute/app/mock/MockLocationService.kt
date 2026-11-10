@@ -142,7 +142,7 @@ class MockLocationService : Service() {
                     finished = traj.isFinished(t),
                 )
             }
-            notify(buildNotification(spec, state, status, traj.isFinished(t)))
+            notify(buildNotification(spec, state, status, traj.isFinished(t), traj.durationSeconds, t))
             // Align to whole seconds of wall-clock to keep a steady 1 Hz.
             delay(TICK_MS - (SystemClock.elapsedRealtime() % TICK_MS))
         }
@@ -221,6 +221,8 @@ class MockLocationService : Service() {
         state: KinematicState?,
         status: SimStatus,
         finished: Boolean = false,
+        durationS: Double? = null,
+        elapsedS: Double = 0.0,
     ): Notification {
         val title = when {
             status == SimStatus.Paused -> "Paused"
@@ -228,10 +230,16 @@ class MockLocationService : Service() {
             else -> spec?.label ?: "Simulating"
         }
         val speedKmh = Units.msToKmh(state?.speedMps ?: 0.0)
-        val text = if (state != null) {
-            String.format(Locale.US, "%.1f km/h · %.5f, %.5f", speedKmh, state.lat, state.lon)
-        } else {
-            "Starting…"
+        val text = when {
+            state == null -> "Starting…"
+            durationS != null && durationS > 0 -> {
+                val left = (durationS - elapsedS).coerceAtLeast(0.0).toLong()
+                String.format(
+                    Locale.US, "%.1f km/h · %d%% · %d:%02d:%02d left",
+                    speedKmh, (100 * elapsedS / durationS).toInt().coerceIn(0, 100), left / 3600, (left % 3600) / 60, left % 60,
+                )
+            }
+            else -> String.format(Locale.US, "%.1f km/h · %.5f, %.5f", speedKmh, state.lat, state.lon)
         }
         val open = PendingIntent.getActivity(
             this, 0,
@@ -248,6 +256,9 @@ class MockLocationService : Service() {
             .setSilent(true)
             .setCategory(NotificationCompat.CATEGORY_SERVICE)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+        if (durationS != null && durationS > 0 && !finished) {
+            b.setProgress(1000, (1000 * elapsedS / durationS).toInt().coerceIn(0, 1000), false)
+        }
         if (status == SimStatus.Paused) {
             b.addAction(0, getString(R.string.notif_resume), actionIntent(ACTION_RESUME, 2))
         } else {
