@@ -1,8 +1,42 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 4 (speed profile + gradient plan + playback) — 0.4.0 built, CI; awaiting phone test. Stages 1–3 verified on device._
+_Last updated: 2026-11-10 — Stage 5 (traffic-aware car/bus) — 0.5.0 built, CI; awaiting phone test with a TomTom key. Stages 1–4 verified on device._
 
 ## Done
+### Stage 5 — traffic-aware Car/Bus (0.5.0)
+- **Also in 0.5.0, a user report:** "max time only shows up to 6 minutes". The cap was 6 **hours**, but times were
+  shown as `6:00`, which reads as 6 min. Durations are now always spelled out ("25 min", "1 h 05 min", via
+  `fmtHmm`). The time range slider has a **scale: 0–1 h (default) or 0–6 h**, so short trips get fine control. The
+  coupled t_max slider picks 0–1 h or 0–6 h automatically.
+- **Flow:** in Car/Bus with a route, the sheet shows a Traffic row. 3 s after the route settles (or after a
+  departure change / **Re-fetch**), `TrafficController` runs `TrafficPlanner.analyze`:
+  1. First request at the 15-min bin of the departure (never in the past).
+  2. Bins from departure − 30 min to departure + 30 min + 1.5 × duration, every 15 min. The step widens (30/45/…
+     min) to stay **≤ 12 requests**, first request included. Each bin is looked up in the cache first.
+  3. Route split into ~1.5 km chunks. For each bin, TomTom's cumulative time profile (guidance offsets/times)
+     gives each chunk's entry time and crossing time.
+  4. **Time-dependent ETA:** a Jacobi fixed point from free-flow; the crossing time is interpolated over the
+     entry times of the bins around t_k. It stops when no arrival moves ≥ 5 s and converges to the sequential
+     solution (tested).
+  5. **Bus:** chunk speed ≤ min(0.85 × car, 60 km/h), a_max 1.0 (BusComfort).
+  6. **Fit:** time-weighted mean/variance of chunk speeds → `BoundedGamma.withMeanVariance` on
+     [max(0, P5), min(100, 1.1·P95)] km/h. Time: mean = propagated duration, sd = RMS of (D(−30 min) − D,
+     D(+30 min) − D, |live − historic|). If that's < max(5 s, 2 %), it falls back to **CV 12 % ("heuristic")**.
+     Bounds mean ± 3 sd, clamped to [0, 6 h]. Made feasible if needed.
+  7. **Worst points:** the top 3 chunks by delay vs free flow (≥ 30 s), as red markers labelled
+     "≈ 08:14, 14 km/h, +4 min".
+  8. Fills the Stage 3 settings with `autoFromTraffic = true`. The Plan screen shows "Auto, from traffic"; any
+     edit clears the flag (values stay).
+  9. The Stage 4 generator uses the predicted chunk speeds as the copula's **local median**
+     (`Request.localMedian`, ζ_i = Φ⁻¹(G(m(s_i)))), so slow spots fall where traffic predicts them, while δ still
+     hits T.
+- **UI:** "Traffic: TomTom (historic)" chip, **Re-fetch**, departure button ("Depart 08:15 today") with a dialog
+  (Today / Tomorrow / +2 days + 24 h TimePicker, or "Now + 1 min"), "TomTom today: N / 2,500", the predicted
+  duration with the ±30 min values, and the request and cache-hit counts. **No key** → a red message, and the
+  plan uses manual Stage 3/4 settings.
+- **Settings → Traffic:** TomTom key field (device-only, autosave). The Google Routes key is stored, but the provider
+  is **not implemented yet** (stub).
+
 ### Stage 4 — speed profile, gradient plan, playback (0.4.0)
 - **`SpeedProfileGenerator`** (`:core`, deterministic per seed) turns route + `SegmentPlanSettings` into a
   `SpeedPlan`:
@@ -123,6 +157,53 @@ _Last updated: 2026-11-10 — Stage 4 (speed profile + gradient plan + playback)
 ### Stage 0
 Gradle multi-module skeleton, version catalog, wrapper, stable debug keystore, CI artifact `app-debug`,
 optional API-key secrets → BuildConfig.
+
+## Stage 5: traffic endpoints, params, quota, inaccuracies
+**TomTom Routing API v1** (docs.tomtom.com/routing-api, checked 2026-11-10):
+`POST https://api.tomtom.com/routing/1/calculateRoute/{latA},{lonA}:{latB},{lonB}/json?key=…&departAt=<RFC 3339 with
+offset, future>&traffic=true&sectionType=traffic&computeTravelTimeFor=all&travelMode=car&instructionsType=coded&routeType=fastest`
+with the body `{"supportingPoints":[{"latitude":…,"longitude":…},…]}`. That is our traced geometry, simplified to
+≤ 1500 points; TomTom documents no maximum, and the body limit is 10 MB.
+- **Parsed:** `summary.travelTimeInSeconds`, `noTrafficTravelTimeInSeconds`, `historicTrafficTravelTimeInSeconds`,
+  `liveTrafficIncidentsTravelTimeInSeconds`; `legs[].points`; `sections[]` with `sectionType == TRAFFIC`
+  (start/endPointIndex → metres, `effectiveSpeedInKmh`, `delayInSeconds`, `magnitudeOfDelay`, `simpleCategory`).
+  The time profile comes from `guidance.instructions[].routeOffsetInMeters/travelTimeInSeconds`. Fallback with no
+  guidance: jam sections at their effective speed, the rest uniform.
+- **Errors (checked live):** an invalid key → 401 `{"detailedError":{"code":"Unauthorized",…}}`. 403 → key/permission
+  (or quota, XML body). 429 → rate/quota. `NO_ROUTE_FOUND` / `MAP_MATCHING_FAILURE` / `CANNOT_RESTORE_BASEROUTE` →
+  "couldn't follow this route".
+- **Bus:** we query `travelMode=car` and apply the bus rules ourselves (TomTom's `bus` mode is BETA with limited
+  data).
+
+**Quota math:** the free tier is 2,500 non-tile requests/day, **shared by all TomTom APIs**. One analysis uses
+≤ 12 requests: a 30 min trip spans −30…+75 min, i.e. ~10–11 bins. That's ≥ 208 fresh analyses/day; a cached
+re-open (same route, weekday and 15-min slot, within 7 days) uses **0**. Cache: `cacheDir/traffic/<routeHash>-<weekday>-<bin>.json`,
+7-day TTL, ≤ 2000 files. The route hash is SHA-256 of mode + geometry simplified (5 m) and rounded (1e-4°). The
+counter is stored in DataStore per day (`traffic_request_day/count`).
+
+**Known inaccuracies:**
+- Historic **typical** speeds for that weekday/time. Live incidents and events are not applied to future
+  departures.
+- The profile resolution is TomTom's guidance points (manoeuvres): long straight stretches get one average speed.
+  Chunks of ~1.5 km smooth it further.
+- "Free flow" = the fastest bin, or the no-traffic total spread proportionally. If all bins are congested, delays
+  are understated.
+- Bus ≠ real bus: there are no bus lanes or stops. **Dwell stops (gamma, mean 20 s) are not simulated yet**
+  (stub).
+- The 15-min grid is epoch-aligned, which matches local clocks in whole-quarter time zones only.
+- The departure only affects the *prediction*: playback starts when you tap Play.
+- Re-tracing a slightly different street-by-street path is a new route hash (new requests).
+- Google Routes `TRAFFIC_AWARE` provider: interface ready (`TrafficProvider`), not implemented.
+
+**Core API:**
+- `TrafficProvider.profile(route, departureEpochS, mode): SpeedProfileSample` (cumulative offsets/times plus
+  sections).
+- `ChunkModel(boundaries, samples, mode).durationAt(k, t)`, `freeFlowDuration(k)`.
+- `TrafficPropagation.propagate(model, dep)`, `firstBin`, `binTimes`.
+- `TrafficPlanner.analyze(route, dep, mode, provider, cache, now, zone) → TrafficAnalysis` (settings,
+  `medianSpeedAt(s)`, worst, totals ±30 min, requestsMade, cacheHits). Also `fitSpeed`, `fitTime`,
+  `worstPoints`, `routeKey`, `cacheKey`.
+- `BoundedGamma.variance` and `withMeanVariance(lo, hi, mean, var)` (bisection on k).
 
 ## Stage 4 API — Plan (for Stages 5–8)
 - `SpeedProfileGenerator.generate(Request(geometry, settings, profile, seed, v0 = 0, vEnd = 0, lockTime = false,
@@ -317,8 +398,23 @@ list of `LatLon`.
 - The tall segment sheet covers part of the map on small screens.
 
 ## Next steps
-- Run the Stage 4 phone test script below.
-- Stage 5: traffic-aware car/bus (TomTom default, Google optional, keys device-only).
+- Run the Stage 5 phone test script below.
+- Stage 6: indoor zone + Gaussian-mixture 3D editor.
+
+## How to verify on phone (Stage 5 test script)
+1. Install 0.5.0. Plan screen → Time: the range shows "25 min" style labels, and the slider scale defaults to
+   0–1 h (0–6 h chip for long trips).
+2. Settings → Traffic: paste your TomTom key (developer.tomtom.com → free key).
+3. Draw a cross-city **Car** route (A → B, ~8–15 km through the centre). About 3 s later the Traffic row shows
+   "Predicted 24 min (−30 min: …, +30 min: …)", "N request(s)" with N ≤ 12, and the counter goes up.
+4. Tap **Depart …** → Tomorrow 08:00 → OK. A new prediction appears, usually longer, with **red markers**
+   "≈ 08:14, 14 km/h, +4 min" at congested places. The plan gradient turns green around them.
+5. Depart → Tomorrow 03:00: a shorter duration, few or no markers.
+6. Back to 08:00: it should say "0 request(s), N from cache" (no new requests).
+7. Speed & time…: "Auto, from traffic". Edit something: it stays editable. Play plan: Google Maps slows down at the
+   congested spots.
+8. Switch to **Bus**: slower prediction (≤ 85 % of car, ≤ 60 km/h), a_max 1.0.
+9. Remove the key: the Traffic row shows "Traffic needs a TomTom key…" and manual planning still works.
 
 ## How to verify on phone (Stage 4 test script)
 1. Install 0.4.0 (Settings → About). Draw an A → B Walk route of 1–2 km.
@@ -350,7 +446,7 @@ list of `LatLon`.
   `platforms;android-36` + `build-tools;36.0.0` with sdkmanager and point `sdk.dir` in `local.properties` at it.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
-- Verified 2026-11-10 in sandbox: `:core:test` 60/60 passed (incl. SpeedProfileGenerator invariants, determinism, KS, curvature, PlanTrajectory, colour scale, chunks); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK.
+- Verified 2026-11-10 in sandbox: `:core:test` 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
 
 ## 0.2.2 (2026-11-10)
 - **Phone round 2:** the A/B markers now follow the map (map-layer approach confirmed ✅).

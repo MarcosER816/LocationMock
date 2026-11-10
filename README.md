@@ -51,6 +51,12 @@ red = fast. A label shows the total time. Tap the line to see the speed and ETA 
 generates a different plan; **Lock time** keeps the duration fixed. **Play plan** moves your mocked location along
 the route with that speed profile.
 
+## Traffic (Stage 5, Car/Bus)
+With a free TomTom key (Settings → Traffic), Car and Bus routes get typical traffic for your departure time. Tap
+**Depart …** to choose it. The app predicts the trip duration, marks the worst congestion points in red
+("≈ 08:14, 14 km/h, +4 min") and fills in the speed & time settings automatically; you can still edit them. One
+prediction uses at most 12 of the 2,500 free daily TomTom requests, and is reused for 7 days.
+
 ## Speed & time (Stage 3)
 In the route sheet tap **Speed & time…**. Set the speed range (km/h) and the time range (h:mm), and shape each one
 with a mean/mode and a "shape" (higher = narrower), shown as live curves. Pick an acceleration preset or type

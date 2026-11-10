@@ -56,5 +56,6 @@ Builds run in GitHub Actions; the user installs the debug APK artifact.
   and say so in HANDOFF.md.
 - Never commit secrets or use tile.openstreetmap.org. Cache Overpass (≤100 automated queries/day) and
   ORS/GraphHopper/TomTom responses; debounce requests.
-- Internally SI units; UI in km/h, h:mm, m/s².
+- Internally SI units; UI in km/h, m/s², and durations spelled out ("25 min", "1 h 05 min"; a bare "6:00" was
+  misread as 6 minutes).
 - Show a one-time disclaimer that other apps can detect mock locations; testing/privacy use only.
