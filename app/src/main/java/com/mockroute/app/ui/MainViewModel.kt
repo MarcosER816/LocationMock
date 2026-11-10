@@ -216,6 +216,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun initZone() {
+        zone.onRefused = { showMessage(it) }
         // Street zone: load roads (cache first — 0 requests if cached) whenever a closed street zone is shown,
         // and snap A/B to the nearest road once the graph exists.
         viewModelScope.launch {

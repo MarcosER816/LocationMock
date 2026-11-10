@@ -19,7 +19,8 @@ Builds run in GitHub Actions; the user installs the debug APK artifact.
    bisection to hit T). Route drawn green (slowest) → yellow (mean) → red (fastest); midpoint label = duration.
 5. INDOOR ZONE: polygon; A and B on the boundary (never inside); free wandering inside, biased by a user-edited
    mixture of 2D Gaussians (3D preview); same settings, a_max default = walking.
-6. STREET ZONE: larger polygon; wander only on OSM streets inside it (Overpass graph); A/B inside or on edge.
+6. STREET ZONE: larger polygon; wander only on OSM streets inside it (Overpass graph); A/B inside or on edge,
+   NEVER outside (editors refuse shapes that leave a fixed point outside; planning refuses too).
 7. TIMELINE: chain segments; B of segment i == A of segment i+1 (enforced); first A = real location captured BEFORE
    mocking (editable). Points are labelled A, B, C, D… Points shared by two steps are FIXED (no editor may move them;
    to change one, delete the steps after it); only the first and last point move. Steps are added/removed only at

@@ -100,6 +100,10 @@ class ZonePlanController(
             is RoadsStatus.Error -> return ZoneStatus.NotReady(r.message)
             is RoadsStatus.Ready -> Unit
         }
+        // Start and end must be inside the zone or on its edge, never outside.
+        for ((p, name) in listOf(a to "start", b to "end")) {
+            if (!poly.contains(f.toLocal(p), 0.5)) return ZoneStatus.NotReady("The $name point is outside the zone: reshape the zone to include it, or move the point inside.")
+        }
         val graph = roads.graphFor(q.d, f, poly) ?: return ZoneStatus.NotReady("Loading roads…")
         if (graph.edgeCount == 0) return ZoneStatus.NotReady("No usable ${q.d.profile.label.lowercase()} roads inside the shape")
         _status.value = ZoneStatus.Generating

@@ -188,6 +188,19 @@ class TimelineTest {
     }
 
     @Test
+    fun streetZoneWithAPointOutsideIsNotPlanned() = runBlocking {
+        // Route A→B ends 100 m west of the street zone, so the zone's fixed start B is outside it.
+        var t = Timeline(anchor = ll(-300.0, 0.0)).add(SegmentKind.Route, "r").moveFreePoint(1, ll(-120.0, 100.0)).add(SegmentKind.Street, "st")
+        val st = t.segments[1] as Segment.StreetZone
+        t = t.replaceKeepingFixed(1, st.copy(zone = st.zone.copy(vertices = area, closed = true, kind = ZoneKind.Streets)).withEnd(ll(205.0, 95.0)))
+        assertEquals(ll(-120.0, 100.0), t.segments[1].start) // still fixed
+        assertTrue(t.issues().any { it.kind == IssueKind.NotInside && it.which == Issue.End.Start })
+        val plan = TimelinePlanner.plan(t, 1_794_000_000L, sources)
+        assertTrue(!plan.playable)
+        assertTrue(plan.segments[1].error!!.contains("Point B is outside the street zone"), plan.segments[1].error)
+    }
+
+    @Test
     fun gpxHasTimestampedPoints() = runBlocking {
         val plan = TimelinePlanner.plan(fullTimeline(1), 1_794_000_000L, sources)
         val traj = assertNotNull(plan.trajectory())

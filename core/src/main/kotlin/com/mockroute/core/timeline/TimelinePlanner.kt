@@ -188,6 +188,12 @@ object TimelinePlanner {
             val z = seg.zone
             val f = z.frame() ?: error("Zone ${i + 1}: draw its shape")
             val poly = z.polygon(f) ?: error("Zone ${i + 1}: the shape is invalid")
+            // Street zones: start and end must be inside the zone or on its edge, never outside.
+            for ((p, k) in listOf(seg.start to i, seg.end to i + 1)) {
+                require(poly.contains(f.toLocal(p), Timeline.EDGE_TOLERANCE_M)) {
+                    "Point ${Timeline.pointLabel(k)} is outside the street zone: reshape the zone so it contains the point"
+                }
+            }
             val graph = src.roadGraph(seg, f, poly) ?: error("Zone ${i + 1}: roads not loaded")
             val st = settingsOf(seg)!!
             val sp = StreetPlanner.plan(

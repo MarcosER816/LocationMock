@@ -1,6 +1,6 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 8 (timeline) — 0.8.1 (user rules: fixed points, letters, context, auto speed/time) built, CI; awaiting phone test. Stages 1–7 verified on device._
+_Last updated: 2026-11-10 — Stage 8 (timeline) — 0.8.2 (user rules: fixed points, letters, context, auto speed/time, street A/B never outside) built, CI; awaiting phone test. Stages 1–7 verified on device._
 
 ## Done
 ### Stage 8 — TIMELINE (0.8.0)
@@ -278,6 +278,19 @@ optional API-key secrets → BuildConfig.
 
 - **Phone result 2026-11-10 (0.6.1):** shape closes; "everything seems fine". The fps figure of the 3D preview
   wasn't reported; ask for it if performance comes up.
+
+## 0.8.2 — street-zone start/end never outside the zone (user rule, 2026-11-10)
+- **Rule:** in a street zone the entry and exit must be inside the zone or on its edge (tolerance 0.5 m).
+- **Free points:** `ZoneEditor.snap` pulls outside taps onto the edge, then onto the nearest road. The road snap
+  is now discarded if it would land outside the zone (possible before, e.g. with a road graph left over from
+  another zone).
+- **Fixed (timeline) points can't move, so the shape must contain them:** **Close shape** is refused with an
+  explanation, and dragging a corner of a closed zone is refused (snackbar via `ZoneEditor.onRefused`) if a fixed
+  start/end would end up outside.
+- **Planning refuses instead of walking in from outside:** the standalone zone shows "The start/end point is
+  outside the zone…"; `TimelinePlanner` reports "Point B is outside the street zone…" for that step (so the
+  timeline isn't playable), next to the existing `NotInside` issue on the card.
+- Test: `streetZoneWithAPointOutsideIsNotPlanned`. Core total 100.
 
 ## 0.8.1 — timeline rules from the phone review (2026-11-10)
 1. **Bug: a street zone's start (fixed to the previous step's end) moved.** The zone editor snapped A to the
