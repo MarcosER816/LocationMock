@@ -22,5 +22,5 @@ Tick a stage (`[x]`) only when its acceptance checks pass and CI is green. Detai
 - [x] **Stage 8 — Timeline.** _(0.8.0; CI; phone test script in HANDOFF.md)_ Chain segments; enforce B(i) == A(i+1); first A = real location captured before mocking.
 - [x] **Stage 9 — GPS noise.** _(0.9.0; CI; phone test script in HANDOFF.md)_ Gauss–Markov error, environment-dependent accuracy, multipath jumps, consistent
   speed/bearing/altitude.
-- [ ] **Stage 10 — Polish + device testing.** Setup wizard, settings (keys in DataStore), HyperOS reliability,
+- [x] **Stage 10 — Polish + device testing.** _(1.0.0; CI + release `latest-debug`; device checklist in docs/TESTING.md still to be run)_ Setup wizard, settings (keys in DataStore), HyperOS reliability,
   end-to-end testing on the POCO F7 Ultra.

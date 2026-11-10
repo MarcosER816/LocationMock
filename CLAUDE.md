@@ -66,3 +66,13 @@ Builds run in GitHub Actions; the user installs the debug APK artifact.
 - Internally SI units; UI in km/h, m/s², and durations spelled out ("25 min", "1 h 05 min"; a bare "6:00" was
   misread as 6 minutes).
 - Show a one-time disclaimer that other apps can detect mock locations; testing/privacy use only.
+
+## UI rules (user preferences, 2026-11-10)
+- Always dark theme with vibrant colours, one per kind of thing (Route blue, Trace cyan, Draw amber, Area purple,
+  Trip green, errors pink). No dynamic colour, no light theme. Dark map by default.
+- Buttons are smooth squares (use the wrappers in `ui/Widgets.kt`; never Material's pill buttons).
+- Animations: ease-OUT only, never ease-in, at most 0.1 s (`AppMotion.spec()`).
+- The map always keeps at least 50 % of the screen; bottom panels scroll inside ≤ 45 %.
+- Plain names in the UI (Map / Route / Trace / Draw / Area, Building / Streets, Start, Shuffle, Trip, Prepare
+  trip…); prefer doing things automatically over asking (e.g. Start trip prepares first).
+- New fixed labels go into the Spanish dictionary in `ui/I18n.kt`.

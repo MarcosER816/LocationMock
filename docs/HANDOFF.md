@@ -1,8 +1,81 @@
 # Handoff
 
-_Last updated: 2026-11-10 — Stage 9 (GPS noise) — 0.9.1 built, CI; awaiting phone test. Also in 0.9.0: street-zone exit fix and real routes in the grey context. Stages 1–7 verified on device; Stage 8 rules (0.8.1–0.8.3) reviewed on device by the user._
+_Last updated: 2026-11-10 — Stage 10 (polish, final) — 1.0.0 built; CI publishes the APK as release `latest-debug`. Device checklist: docs/TESTING.md (not run yet for 1.0.0)._
 
 ## Done
+### Stage 10 — polish and reliability (1.0.0)
+**Robustness**
+- **Screen-off runs:** the service holds a partial wake lock while simulating (released on stop, capped at 6 h
+  10 min). `WAKE_LOCK` permission added.
+- **Resume after process death:** while a trip plays, `PlaybackStore` saves (name, elapsed, total, time) every 5 s
+  to `filesDir/playback.json`. A deliberate stop deletes it. On the next start, if it is < 12 h old and
+  unfinished, the map shows "…was interrupted at N % — Resume trip / Dismiss". Resume re-prepares the trip (same
+  seeds) and starts at that offset.
+- **Mock app deselected mid-run:** the `SecurityException` on a tick stops the run cleanly and posts a notification
+  that opens Developer options ("…Select mock location app → MockRoute. Then … Resume trip"). The resume point is
+  kept.
+- **Offline:** an "Offline: showing saved map and routes only" notice (ConnectivityManager). MapLibre serves
+  already-seen tiles from its ambient cache; routes, traffic and streets come from their disk caches.
+- **Background test** (Settings): 10 minutes of standing at the real location; `TickMonitor` counts ticks, late
+  ticks (> 1.5 s) and the longest gap → PASS / THROTTLED / stopped, with advice.
+- **Xiaomi / HyperOS helper** (shown when the manufacturer or brand is Xiaomi/POCO/Redmi): the five rules, **Open
+  Autostart** (MIUI security-centre activity, falling back to app info) and **Open app info**.
+
+**Look and behaviour (user rules, also in CLAUDE.md)**
+- **Always dark with vibrant colours** (`ui/theme/Theme.kt`): Route blue, Trace cyan, Draw amber, Area purple,
+  Trip green, errors pink. Dynamic colour and light mode are gone on purpose (this replaces the "Material 3
+  dynamic color / dark mode" item of the stage brief).
+- **Smooth-square buttons:** `ui/Widgets.kt` shadows `Button`, `OutlinedButton`, `FilledTonalButton`, `TextButton`
+  inside the `ui` package with a 10 dp rounded shape; theme shapes are 6–16 dp, so chips, cards and FABs follow.
+- **Motion rule:** ease-out only, ≤ 100 ms (`AppMotion.spec()`); the camera fly-to is 100 ms; onboarding pages
+  switch without animation. Material's built-in component animations (ripple, switch thumb, slider) are not
+  overridden.
+- **Map ≥ 50 % of the screen:** everything at the bottom of the map shares at most 45 % of the screen height and
+  scrolls inside.
+- **Dark map** by default (OpenFreeMap `dark`, falling back to liberty → bright → demo); Settings → Map style →
+  Light brings liberty back.
+- **Simpler names:** toolbar Map / Route / Trace / Draw / Area; "Be here", "Walk here"; "Start" (was Play
+  plan/zone); "Shuffle" (Re-roll); "Keep duration" (Lock time); Area kinds "Building" / "Streets"; tools Shape /
+  Start point / End point / Favourite spots (Hotspots); "Prepare trip" (Plan all), "Start trip"; "Update streets";
+  "Consistency" (shape k). Code identifiers keep the old names.
+- **More automatic:** **Start trip** prepares the trip first when needed and then starts by itself.
+- **Spanish + English:** `I18n` translates fixed labels by exact English text (about 150 entries) through the
+  shadowed `Text`; Settings → Language (System / English / Español). Notification, tile and shortcut texts are
+  Android resources (`values-es`). **Labels built with numbers and most long explanations are still English.**
+- **Units** (Settings): `UiUnits` formats distances and the Speed & time screen in metric or imperial. Sliders,
+  the legend and the notification still use km/h.
+- 3-screen onboarding (once, before the wizard), trip empty state, haptic tick when a start/end point snaps,
+  content description on the trip button.
+
+**Shortcuts**
+- **Quick Settings tile** (`MockTileService`): running → Stop; idle → opens the app, which starts the last trip.
+- **Launcher shortcut** "Last trip" (`ACTION_PLAY_LAST`).
+- Notification actions: Pause / Resume, **Next step** (trips), Stop.
+
+**Performance** (JVM, `PerformanceTest`): 50 km car plan 17 ms (budget 300); indoor area plan 9 ms (budget
+1,000); 5,000 gradient chunks 12 ms. The app caps the gradient at about 1,000 chunks per route.
+
+**CI**
+- Non-blocking `:app:lintDebug` step (+ report artifact).
+- On `main` **or the repository's default branch**, the workflow re-creates the GitHub Release **`latest-debug`**
+  (tag included) with `MockRoute-debug.apk`. The repo currently has only the `claude/…` branch as default, so the
+  release is published from it; once a `main` branch exists the same step runs there. Workflow permission is now
+  `contents: write`.
+
+**Not done / limits**
+- Compose UI tests: none (no emulator in CI); `docs/TESTING.md` is the manual replacement.
+- The 2-hour screen-off run and the HyperOS behaviour are untested here (device only).
+- Full translation and full unit switching (see above).
+- Material component animations are stock.
+
+## Remaining ideas
+- **GPX import** (turn a recorded track into a route step).
+- **Bus stops from OSM** (dwell at real stops for Bus; `highway=bus_stop` via Overpass).
+- **Elevation API** (terrain-following altitude along routes instead of one base value per step).
+- **Floor plans / multi-floor buildings** (inner walls, doors, stairs, altitude per floor).
+- Google Routes traffic provider; turn restrictions and traffic lights in street areas; real string resources for
+  every label; accuracy-aware resume (re-plan from the exact stop position).
+
 ### Stage 9 — GPS noise (0.9.0)
 - **`noise.GpsNoiseModel(settings, seed)`** (`:core`, seeded, stateful): `next(truth, environment, dt = 1 s):
   NoisyFix?` (null = a missed fix).
@@ -831,8 +904,8 @@ list of `LatLon`.
 - The tall segment sheet covers part of the map on small screens.
 
 ## Next steps
-- Run the Stage 9 phone test below (and the 0.8.x timeline checks).
-- Stage 10: polish + device testing.
+- Run `docs/TESTING.md` on the phone for 1.0.0 and record results there.
+- Then pick from "Remaining ideas".
 
 ## How to verify on phone (Stage 9 + 0.9.0 fixes)
 1. Install 0.9.0. Timeline: add a route, then **+ Street** → Edit: draw the shape around the fixed start, **Close
@@ -947,7 +1020,7 @@ list of `LatLon`.
   `platforms;android-36` + `build-tools;36.0.0` with sdkmanager and point `sdk.dir` in `local.properties` at it.
   Maven Central sometimes returns HTTP 429 in the sandbox; re-run.
 - CI (source of truth): every push / PR / manual run builds the `app-debug` artifact.
-- Verified 2026-11-10 in sandbox: `:core:test` 106/106 passed (Stage 9 noise: stationary consistency + autocorrelation ×5 seeds, validity over 2 h with environment switches for 3 presets, ordering of environments, ramp, determinism/multipath); 0.8.1–0.8.3: 99–100/100 passed (rules + auto settings); before: 93/93 passed (Stage 8: 1,000 random edit sequences, pause runs, fixes, codec/versioning, Route→Indoor→Route→Street→Pause continuity ×20 seeds, GPX, seeds); before: 86/86 passed (Stage 7: Overpass parse/query, mode filters, polygon clipping, oneway, SCC, snapping, 150 walk + 150 car plans on/inside/on-time/accel/oneway/turn caps, dominant vs uniform, 30×30 perf); before: 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
+- Verified 2026-11-10 in sandbox: `:core:test` 109/109 passed (Stage 10 adds performance budgets); Stage 9: 106–107 passed (noise: stationary consistency + autocorrelation ×5 seeds, validity over 2 h with environment switches for 3 presets, ordering of environments, ramp, determinism/multipath); 0.8.1–0.8.3: 99–100/100 passed (rules + auto settings); before: 93/93 passed (Stage 8: 1,000 random edit sequences, pause runs, fixes, codec/versioning, Route→Indoor→Route→Street→Pause continuity ×20 seeds, GPX, seeds); before: 86/86 passed (Stage 7: Overpass parse/query, mode filters, polygon clipping, oneway, SCC, snapping, 150 walk + 150 car plans on/inside/on-time/accel/oneway/turn caps, dominant vs uniform, 30×30 perf); before: 79/79 passed (Stage 6: polygon/snap/path/mixture, 1,000 L-shaped plans, dominant-component share, Langevin, zone feasibility, definition JSON); earlier: 69/69 passed (incl. traffic: bin selection, convergence, mean/variance fit ±3 %, worst ranking, ≤ 12 requests + cache, bus rules, TomTom fixture/URL); `:app:lintDebug` 0 errors; `:app:assembleDebug` OK. TomTom success responses are a hand-built fixture (no key in the sandbox); errors were checked live.
 
 ## 0.2.2 (2026-11-10)
 - **Phone round 2:** the A/B markers now follow the map (map-layer approach confirmed ✅).

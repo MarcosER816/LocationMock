@@ -8,14 +8,15 @@ Built entirely in GitHub Actions; installed from the phone. See `docs/ROADMAP.md
 ## Install from your phone (no computer needed)
 
 ### 1. Get the APK
-1. Open the repo on GitHub (app or browser) → **Actions** → **Android CI**.
-2. Open the latest run with a green check ✅.
-3. Under **Artifacts**, tap **app-debug** to download `app-debug.zip`
-   (in the GitHub mobile app you may need "Open in browser"; you must be signed in).
+Easiest: open **github.com/MarcosER816/LocationMock/releases** in your phone's browser → **MockRoute — latest debug
+build** → tap **MockRoute-debug.apk**. It is rebuilt automatically on every change.
 
-### 2. Unzip and install
-1. Open **File Manager** → **Downloads** → tap `app-debug.zip` → **Extract**.
-2. Tap `app-debug.apk` → **Install**. If asked, allow "Install unknown apps" for File Manager/your browser.
+(Alternative: **Actions** → latest green **Android CI** run → **Artifacts** → **app-debug**, which downloads a
+zip that you extract first.)
+
+### 2. Install
+1. Open **File Manager** → **Downloads** (extract `app-debug.zip` first if you used the Actions artifact).
+2. Tap `MockRoute-debug.apk` (or `app-debug.apk`) → **Install**. If asked, allow "Install unknown apps" for File Manager/your browser.
 3. Later builds install over the old one (same debug signature) — no need to uninstall.
 
 ### 3. Turn on Developer options (once)
