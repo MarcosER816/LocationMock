@@ -86,7 +86,7 @@ sealed class RoutingException(val userMessage: String, cause: Throwable? = null)
     class NoRoute(provider: String, detail: String?) :
         RoutingException("$provider found no route here${detail?.let { ": $it" } ?: ""}. Try points closer to a road.")
     class Network(provider: String, cause: Throwable?) :
-        RoutingException("Can't reach $provider (offline?). Using straight lines.", cause)
+        RoutingException("Can't reach $provider (${cause?.message?.take(140) ?: "offline?"}). Using straight lines.", cause)
     class Http(provider: String, code: Int, detail: String?) :
         RoutingException("$provider error $code${detail?.let { ": $it" } ?: ""}")
     class Parse(provider: String, cause: Throwable?) :

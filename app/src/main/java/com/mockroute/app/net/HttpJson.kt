@@ -2,54 +2,54 @@ package com.mockroute.app.net
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
+import java.util.concurrent.TimeUnit
 
-/** Minimal JSON-over-HTTPS POST (no extra dependency). Never logs headers: they may hold API keys. */
+/**
+ * Minimal JSON-over-HTTPS client (routing, traffic, Overpass). Never logs headers: they may hold API keys.
+ *
+ * 1.1.7: OkHttp with [BlockSafeDns] instead of HttpURLConnection, so a phone DNS that answers 0.0.0.0 (ad-blocking
+ * Private DNS, blocker app, carrier filter) no longer breaks routing; the user's phone does this.
+ */
 object HttpJson {
     data class Response(val code: Int, val body: String?)
 
-    @Throws(IOException::class)
-    suspend fun get(url: String, headers: Map<String, String> = emptyMap()): Response =
-        withContext(Dispatchers.IO) {
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 15_000
-                readTimeout = 30_000
-                setRequestProperty("Accept", "application/json")
-                setRequestProperty("User-Agent", "MockRoute-Android")
-                headers.forEach { (k, v) -> setRequestProperty(k, v) }
-            }
-            try {
-                val code = conn.responseCode
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                Response(code, stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() })
-            } finally {
-                conn.disconnect()
-            }
-        }
+    val client: OkHttpClient = OkHttpClient.Builder()
+        .dns(BlockSafeDns)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .build()
+
+    /** For slow servers (Overpass). */
+    val slowClient: OkHttpClient = client.newBuilder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(120, TimeUnit.SECONDS).build()
+
+    private const val UA = "MockRoute-Android"
 
     @Throws(IOException::class)
-    suspend fun post(url: String, body: String, headers: Map<String, String> = emptyMap()): Response =
-        withContext(Dispatchers.IO) {
-            val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 15_000
-                readTimeout = 30_000
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                setRequestProperty("Accept", "application/json, application/geo+json")
-                setRequestProperty("User-Agent", "MockRoute-Android")
-                headers.forEach { (k, v) -> setRequestProperty(k, v) }
-            }
-            try {
-                conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                val code = conn.responseCode
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                Response(code, stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() })
-            } finally {
-                conn.disconnect()
-            }
-        }
+    suspend fun get(url: String, headers: Map<String, String> = emptyMap()): Response = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url(url).header("Accept", "application/json").header("User-Agent", UA)
+            .apply { headers.forEach { (k, v) -> header(k, v) } }.build()
+        execute(client, req)
+    }
+
+    @Throws(IOException::class)
+    suspend fun post(url: String, body: String, headers: Map<String, String> = emptyMap()): Response = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url(url)
+            .post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
+            .header("Accept", "application/json, application/geo+json").header("User-Agent", UA)
+            .apply { headers.forEach { (k, v) -> header(k, v) } }.build()
+        execute(client, req)
+    }
+
+    /** Runs [req] on [c]; IllegalArgumentException (bad URL/header) becomes IOException like before. */
+    @Throws(IOException::class)
+    fun execute(c: OkHttpClient, req: Request): Response = try {
+        c.newCall(req).execute().use { r -> Response(r.code, r.body?.string()) }
+    } catch (e: IllegalArgumentException) {
+        throw IOException(e.message, e)
+    }
 }

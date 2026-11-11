@@ -8,9 +8,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import java.net.URLEncoder
 
 class OverpassException(val userMessage: String, cause: Throwable? = null) : Exception(userMessage, cause)
 
@@ -72,23 +69,14 @@ class OverpassClient(context: Context) {
     }
 
     private suspend fun post(endpoint: String, query: String): Pair<Int, String?> = withContext(Dispatchers.IO) {
-        val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 20_000
-            readTimeout = 120_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
-            setRequestProperty("User-Agent", Overpass.USER_AGENT)
-            setRequestProperty("Accept", "application/json")
-        }
-        try {
-            conn.outputStream.use { it.write(("data=" + URLEncoder.encode(query, "UTF-8")).toByteArray()) }
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            code to stream?.bufferedReader()?.use { it.readText() }
-        } finally {
-            conn.disconnect()
-        }
+        // OkHttp + BlockSafeDns (via HttpJson.slowClient): works even when the phone's DNS blocks the host.
+        val req = okhttp3.Request.Builder().url(endpoint)
+            .post(okhttp3.FormBody.Builder(Charsets.UTF_8).add("data", query).build())
+            .header("User-Agent", Overpass.USER_AGENT)
+            .header("Accept", "application/json")
+            .build()
+        val r = HttpJson.execute(HttpJson.slowClient, req)
+        r.code to r.body
     }
 
     private suspend fun store(query: String, body: String) = withContext(Dispatchers.IO) {

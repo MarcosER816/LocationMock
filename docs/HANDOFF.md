@@ -1228,3 +1228,14 @@ Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in
     cache). Dispatcher 64 total / 16 per host.
   - Interceptor never throws anything but IOException.
 - JVM check: first tile 1.2 s, its neighbours afterwards 1 ms, a cancelled request returns in 0.2 s.
+
+## 1.1.7 — routing fell back to a straight line (user report, 2026-11-11)
+- Routing code was unchanged since it last worked and both servers are up (api.heigit.org answers 401 without a
+  key here). Most likely cause: the same phone DNS blocking that hit Overture's S3 host (answers 0.0.0.0).
+- Fix: `HttpJson` now runs on OkHttp with `BlockSafeDns` (system DNS, then DNS-over-HTTPS if blocked); same API, so
+  ORS, GraphHopper and TomTom need no change. Overpass moved from HttpURLConnection to `HttpJson.slowClient`
+  (120 s read timeout). JVM check: api.heigit.org reached both normally and with its host forced onto the
+  "blocked" path.
+- The straight-line notice now carries the real cause ("Can't reach OpenRouteService (<cause>). Using straight
+  lines.") instead of "(offline?)", so the next report says what failed.
+- If routing still fails: ask for that notice text, or Settings → Test routing.
