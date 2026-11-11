@@ -151,13 +151,29 @@ object OvertureBuildings {
             .build()
     }
 
-    /** Puts [interceptor] into MapLibre's HTTP client. Call once, before the first map is created. */
-    fun install() {
-        val client = OkHttpClient.Builder()
-            .addInterceptor(interceptor)
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .build()
-        org.maplibre.android.module.http.HttpRequestUtil.setOkHttpClient(client)
+    /**
+     * Puts [interceptor] into MapLibre's HTTP client. Call once, before the first map is created.
+     *
+     * MapLibre must be initialised first: MapLibre's HTTP class reads MapLibre.getApplicationContext() when it is
+     * first loaded, and 1.1.3 crashed at start-up because install() ran before that. Never throws: without the
+     * interceptor the map still works, only the Overture buildings are missing (shown in Settings).
+     */
+    /** True once [install] put the interceptor in place; otherwise the map uses the style without Overture. */
+    @Volatile var installed = false
+        private set
+
+    fun install(context: Context) {
+        try {
+            org.maplibre.android.MapLibre.getInstance(context.applicationContext)
+            val client = OkHttpClient.Builder()
+                .addInterceptor(interceptor)
+                .connectTimeout(15, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .build()
+            org.maplibre.android.module.http.HttpRequestUtil.setOkHttpClient(client)
+            installed = true
+        } catch (t: Throwable) {
+            _status.value = "Overture buildings: off — could not set up the tile reader (${t.javaClass.simpleName}: ${t.message})"
+        }
     }
 }

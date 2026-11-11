@@ -131,7 +131,7 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
     val bundledDark = remember(bundledRaw, overtureRelease) {
         bundledRaw?.let {
             listOf(
-                com.mockroute.app.map.OvertureBuildings.styleWith(it, overtureRelease),
+                com.mockroute.app.map.OvertureBuildings.styleWith(it, overtureRelease.takeIf { com.mockroute.app.map.OvertureBuildings.installed }),
                 com.mockroute.app.map.OvertureBuildings.styleWith(it, null),
             )
         } ?: emptyList()

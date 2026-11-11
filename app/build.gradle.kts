@@ -18,8 +18,8 @@ android {
         applicationId = "com.mockroute.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 25
-        versionName = "1.1.3"
+        versionCode = 26
+        versionName = "1.1.4"
 
         // Target phone (POCO F7 Ultra) is arm64; skipping other ABIs cuts the APK from ~75 MB to ~25 MB.
         ndk { abiFilters += listOf("arm64-v8a") }

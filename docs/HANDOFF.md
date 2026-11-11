@@ -1189,3 +1189,14 @@ Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in
   tiles through OkHttp on the JVM (z14 Churubusco tile 1.8 MB in 1.3 s; empty tile → 204).
 - Settings → Map shows "Overture buildings: N tiles loaded" or the last error, for diagnosis on the phone.
 - Note: Overture tiles are heavy in dense areas (up to ~1.8 MB at z14); watch smoothness on the device.
+
+## 1.1.4 — crash at start-up in 1.1.3 (user report, 2026-11-11)
+- Cause: `OvertureBuildings.install()` ran in `MockRouteApp.onCreate` and called
+  `HttpRequestUtil.setOkHttpClient`, which loads `HttpRequestImpl`, whose static initialiser builds the user agent
+  from `MapLibre.getApplicationContext()` — that throws before `MapLibre.getInstance()` has run (it ran only when
+  the first map was created). Not catchable by JVM tests here (no emulator: no /dev/kvm).
+- Fix: `install(context)` first calls `MapLibre.getInstance(appContext)` (the same call maplibre-compose makes
+  later; idempotent), then sets the client, all inside `try/catch (Throwable)`. If it ever fails, the app still
+  starts, Settings says "Overture buildings: off — …", and the map uses the style **without** Overture (OpenMapTiles
+  3-D buildings back), via `OvertureBuildings.installed`.
+- Lesson: anything in `Application.onCreate` must never be able to throw.
