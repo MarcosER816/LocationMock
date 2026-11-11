@@ -1174,3 +1174,18 @@ Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in
 - Checked by rendering with MapLibre GL JS + pmtiles in headless Chromium (Churubusco flat and tilted, Madrid
   tilted); `:core:test` and `:app:assembleDebug` pass. **Not yet checked on the phone** (PMTiles on Android).
 - Attribution now mentions Overture Maps.
+
+## 1.1.3 — Overture buildings did not show on the phone (user report, 2026-11-11)
+- On the POCO, 1.1.2 showed no Overture buildings at all (and, because the OpenMapTiles 3-D layer is dropped when
+  Overture is on, the known buildings became flat). MapLibre Android's `pmtiles://` source failed silently; no
+  device logs to see why.
+- Fix: the app no longer relies on MapLibre's PMTiles support. `core/tiles/PmTiles.kt` is a small PMTiles v3
+  reader (header, varint directories, Hilbert tile ids, leaf directories, gzip); `OvertureBuildings.interceptor`
+  is installed in MapLibre's OkHttp client (`HttpRequestUtil.setOkHttpClient`, from `MockRouteApp.onCreate`) and
+  answers `https://overture-tiles.mockroute.invalid/<release>/{z}/{x}/{y}.pbf` by Range-reading the S3 archive
+  (200 with the tile, 204 where there is none). The style source is now a plain `tiles` source.
+- Verified here: the Kotlin reader returns byte-identical tiles to the reference pmtiles JS library (live test,
+  `PMTILES_LIVE=<url> ./gradlew :core:test --tests '*PmTilesTest*'`), and the compiled interceptor served real
+  tiles through OkHttp on the JVM (z14 Churubusco tile 1.8 MB in 1.3 s; empty tile → 204).
+- Settings → Map shows "Overture buildings: N tiles loaded" or the last error, for diagnosis on the phone.
+- Note: Overture tiles are heavy in dense areas (up to ~1.8 MB at z14); watch smoothness on the device.

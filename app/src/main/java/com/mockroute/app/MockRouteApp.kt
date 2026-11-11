@@ -11,6 +11,8 @@ class MockRouteApp : Application() {
     override fun onCreate() {
         super.onCreate()
         settings = SettingsRepository(this)
+        // Overture building tiles are served to the map by our own PMTiles reader (see OvertureBuildings).
+        com.mockroute.app.map.OvertureBuildings.install()
         // A fresh process never has a running simulation (the service is START_NOT_STICKY), so any test
         // provider still registered is a leftover from a killed process: remove it so real GPS works again.
         StartupCleaner.clean(this, reason = "app start")

@@ -194,9 +194,9 @@ for layer in d["layers"]:
     if lid == "building-3d":
         # Overture Maps buildings (OpenStreetMap + footprints traced from imagery by Microsoft/Google/Esri): they
         # cover neighbourhoods where OpenStreetMap has no buildings (e.g. most of Iztapalapa, CDMX). Drawn on top of
-        # the OpenMapTiles footprints. The PMTiles URL depends on Overture's monthly release and old releases are
-        # deleted, so the app puts the current one in place of OVERTURE_PLACEHOLDER (map/OvertureBuildings.kt) and
-        # then drops the OpenMapTiles 3-D layer to avoid two extrusions of the same building.
+        # the OpenMapTiles footprints. The app replaces the source's placeholder URL with z/x/y tiles that its own
+        # PMTiles reader serves for the current Overture release (map/OvertureBuildings.kt), and drops the
+        # OpenMapTiles 3-D layer to avoid two extrusions of the same building.
         not_under = ["!=", ["get", "is_underground"], True]
         # (["*", null, 3.2] is an error, not null, so the floor count must be checked with "has" first.)
         ov_height = ["coalesce", ["get", "height"],

@@ -52,6 +52,9 @@ private fun GeneralSettings(vm: MainViewModel) {
     choice("Language", listOf("system" to "System", "en" to "English", "es" to "Español"), s.language, vm::setLanguage)
     choice("Units", listOf("metric" to "Metric (km/h, m)", "imperial" to "Imperial (mph, ft)"), if (s.imperialUnits) "imperial" else "metric") { vm.setImperial(it == "imperial") }
     choice("Map style", listOf("dark" to "Dark", "light" to "Light"), s.mapStyle, vm::setMapStyle)
+    // Shows whether the extra building layer loads (tell the developer what it says if buildings are missing).
+    val overture by com.mockroute.app.map.OvertureBuildings.status.collectAsStateWithLifecycle()
+    androidx.compose.material3.Text(overture, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 /** Background reliability: a 10-minute throttling test, and the Xiaomi / HyperOS checklist. */

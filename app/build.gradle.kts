@@ -18,8 +18,8 @@ android {
         applicationId = "com.mockroute.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "1.1.2"
+        versionCode = 25
+        versionName = "1.1.3"
 
         // Target phone (POCO F7 Ultra) is arm64; skipping other ABIs cuts the APK from ~75 MB to ~25 MB.
         ndk { abiFilters += listOf("arm64-v8a") }
@@ -79,5 +79,6 @@ dependencies {
     implementation(libs.play.services.location)
     // MapLibre Compose 0.14 bundles the MapLibre Native Android (OpenGL) runtime: no extra render artifact needed.
     implementation(libs.maplibre.compose)
+    implementation(libs.okhttp)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
