@@ -1,6 +1,7 @@
 package com.mockroute.app.map
 
 import android.content.Context
+import com.mockroute.core.tiles.MvtSlim
 import com.mockroute.core.tiles.PmTilesReader
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -105,6 +106,10 @@ object OvertureBuildings {
     }.getOrElse { styleJson }
 
     // ---- tile server ------------------------------------------------------------------------------------------
+    /** True once [install] put the interceptor in place; otherwise the map uses the style without Overture. */
+    @Volatile var installed = false
+        private set
+
     /** Plain client for the Range requests to S3 (no interceptor, so no loop). */
     private val s3 = OkHttpClient.Builder()
         .dns(com.mockroute.app.net.BlockSafeDns) // the user's phone DNS answers 0.0.0.0 for the S3 host
@@ -127,6 +132,119 @@ object OvertureBuildings {
 
     private val pbf = "application/x-protobuf".toMediaType()
 
+    /** Only what the style uses; everything else (ids, sources, names…) is cut out of each tile ([MvtSlim]). */
+    private val KEEP = setOf("height", "num_floors", "min_height", "is_underground", "has_parts")
+
+    // ---- loading: disk cache + shared in-flight fetches + neighbour prefetch ---------------------------------
+    // 1.1.6: buildings stopped at the edge of the first view. Dense z14 tiles are ~1.8 MB; MapLibre fetched them 5
+    // at a time and kept waiting for tiles already off screen. Now tiles are slimmed (~5× smaller), cached on disk,
+    // fetched by a pool of workers, the 8 neighbours of every requested tile are prefetched (newest first), and
+    // a request MapLibre cancels stops waiting at once (its fetch still finishes into the cache).
+    @Volatile private var cacheDir: File? = null
+    private const val CACHE_LIMIT_BYTES = 300L * 1024 * 1024
+    private val inFlight = ConcurrentHashMap<String, java.util.concurrent.Future<ByteArray?>>()
+    private val workers = java.util.concurrent.ThreadPoolExecutor(
+        6, 6, 30, TimeUnit.SECONDS,
+        // LIFO: the tiles around where the camera is NOW go first.
+        // Stale ones (the camera has moved on) fall off the end: cancelled, so nobody waits on them.
+        object : java.util.concurrent.LinkedBlockingDeque<Runnable>() {
+            override fun offer(e: Runnable): Boolean {
+                while (size > 48) (pollLast() as? TileTask)?.drop()
+                return offerFirst(e)
+            }
+        },
+    ).apply { allowCoreThreadTimeOut(true) }
+
+    private class TileTask(val key: String, body: () -> ByteArray?) : java.util.concurrent.FutureTask<ByteArray?>(body) {
+        fun drop() { cancel(false); inFlight.remove(key, this) }
+    }
+
+    private fun key(release: String, z: Int, x: Int, y: Int) = "$release/$z-$x-$y"
+    private fun cacheFile(key: String) = cacheDir?.let { File(it, key.replace('/', '_') + ".mvt") }
+
+    /** Last ~40 tiles in memory (slimmed tiles are ~0.1–0.5 MB). */
+    private val memory = object : LinkedHashMap<String, ByteArray>(64, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?) = size > 40
+    }
+
+    private fun readCache(key: String): ByteArray? = synchronized(memory) { memory[key] }
+        ?: cacheFile(key)?.takeIf { it.exists() }?.let { f ->
+            runCatching { f.setLastModified(System.currentTimeMillis()); f.readBytes() }.getOrNull()
+                ?.also { synchronized(memory) { memory[key] = it } }
+        }
+
+    private fun writeCache(key: String, data: ByteArray) {
+        synchronized(memory) { memory[key] = data }
+        val f = cacheFile(key) ?: return
+        runCatching {
+            val tmp = File(f.parentFile, f.name + ".tmp")
+            tmp.writeBytes(data)
+            tmp.renameTo(f)
+        }
+        if (served.get() % 50 == 0) trimCache()
+    }
+
+    private fun trimCache() = runCatching {
+        val files = cacheDir?.listFiles()?.sortedBy { it.lastModified() } ?: return@runCatching
+        var total = files.sumOf { it.length() }
+        for (f in files) { if (total <= CACHE_LIMIT_BYTES) break; total -= f.length(); f.delete() }
+    }
+
+    /** Starts (or joins) the fetch of one tile. The result is slimmed and cached; empty tile = empty array. */
+    private fun fetch(release: String, z: Int, x: Int, y: Int): java.util.concurrent.Future<ByteArray?> {
+        val k = key(release, z, x, y)
+        inFlight[k]?.let { return it }
+        val task = TileTask(k) {
+            try {
+                readCache(k) ?: run {
+                    val raw = reader(release).tile(z, x, y)
+                    val slim = if (raw == null) ByteArray(0) else runCatching { MvtSlim.slim(raw, KEEP) }.getOrDefault(raw)
+                    writeCache(k, slim)
+                    slim
+                }
+            } finally {
+                inFlight.remove(k)
+            }
+        }
+        val existing = inFlight.putIfAbsent(k, task)
+        if (existing != null) return existing
+        workers.execute(task)
+        return task
+    }
+
+    private fun prefetchAround(release: String, z: Int, x: Int, y: Int) {
+        if (z < 14) return
+        val n = 1 shl z
+        for (dx in -1..1) for (dy in -1..1) {
+            if (dx == 0 && dy == 0) continue
+            val nx = (x + dx + n) % n
+            val ny = y + dy
+            if (ny !in 0 until n) continue
+            val k = key(release, z, nx, ny)
+            if (cacheFile(k)?.exists() == true || inFlight.containsKey(k)) continue
+            fetch(release, z, nx, ny)
+        }
+    }
+
+    private fun awaitTile(chain: Interceptor.Chain, release: String, z: Int, x: Int, y: Int): ByteArray {
+        readCache(key(release, z, x, y))?.let { return it }
+        var future = fetch(release, z, x, y)
+        while (true) {
+            if (chain.call().isCanceled()) throw IOException("Canceled") // tile left the screen
+            try {
+                return future.get(200, TimeUnit.MILLISECONDS) ?: ByteArray(0)
+            } catch (_: java.util.concurrent.TimeoutException) {
+                // keep waiting
+            } catch (_: java.util.concurrent.CancellationException) {
+                future = fetch(release, z, x, y) // our prefetch queue dropped it: ask again
+            } catch (e: java.util.concurrent.ExecutionException) {
+                val cause = e.cause ?: e
+                report(cause.message ?: cause.javaClass.simpleName)
+                throw if (cause is IOException) cause else IOException(cause)
+            }
+        }
+    }
+
     val interceptor = Interceptor { chain ->
         val request = chain.request()
         if (request.url.host != HOST) return@Interceptor chain.proceed(request)
@@ -139,18 +257,22 @@ object OvertureBuildings {
             return@Interceptor Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(404).message("bad tile")
                 .body(ByteArray(0).toResponseBody(pbf)).build()
         }
-        val tile = try {
-            reader(release).tile(z, x, y)
-        } catch (e: Exception) {
-            report(e.message ?: e.javaClass.simpleName)
-            throw if (e is IOException) e else IOException(e)
+        val tile: ByteArray = try {
+            awaitTile(chain, release, z, x, y)
+        } catch (e: IOException) {
+            throw e
+        } catch (t: Throwable) {
+            // Never let anything but IOException out of an OkHttp interceptor: on MapLibre's threads it would crash.
+            report(t.message ?: t.javaClass.simpleName)
+            throw IOException(t)
         }
+        runCatching { prefetchAround(release, z, x, y) }
         served.incrementAndGet()
         report()
         Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
-            .code(if (tile == null) 204 else 200).message(if (tile == null) "No Content" else "OK")
+            .code(if (tile.isEmpty()) 204 else 200).message(if (tile.isEmpty()) "No Content" else "OK")
             .header("Cache-Control", "max-age=2592000")
-            .body((tile ?: ByteArray(0)).toResponseBody(pbf))
+            .body(tile.toResponseBody(pbf))
             .build()
     }
 
@@ -161,14 +283,14 @@ object OvertureBuildings {
      * first loaded, and 1.1.3 crashed at start-up because install() ran before that. Never throws: without the
      * interceptor the map still works, only the Overture buildings are missing (shown in Settings).
      */
-    /** True once [install] put the interceptor in place; otherwise the map uses the style without Overture. */
-    @Volatile var installed = false
-        private set
-
     fun install(context: Context) {
         try {
             org.maplibre.android.MapLibre.getInstance(context.applicationContext)
+            cacheDir = File(context.cacheDir, "overture-tiles").apply { mkdirs() }
+            // MapLibre's default allows 5 parallel requests per host; building tiles need more to keep up.
+            val dispatcher = okhttp3.Dispatcher().apply { maxRequests = 64; maxRequestsPerHost = 16 }
             val client = OkHttpClient.Builder()
+                .dispatcher(dispatcher)
                 .addInterceptor(interceptor)
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS)

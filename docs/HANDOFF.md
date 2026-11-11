@@ -1212,3 +1212,19 @@ Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in
 - Verified on the JVM: with the host forced onto the "blocked" path, DoH resolved it and the interceptor served the
   1.8 MB Churubusco z14 tile. If the carrier blocks the S3 IPs themselves (not just DNS), this won't help; the
   Settings line will then show a connect/timeout error with a real IP.
+
+## 1.1.6 — Overture buildings stop at the edge of the first view (user report, 2026-11-11)
+- Cause: dense z14 Overture tiles are ~1.8 MB each; MapLibre's OkHttp client fetched only 5 per host at a time,
+  each took 1–2 s, and requests for tiles already off screen kept their slots. (z13 tiles are not an option: they
+  keep only ~10 % of the buildings.)
+- Fixes (`map/OvertureBuildings.kt`, `core/tiles/MvtSlim.kt`):
+  - **Slim tiles:** `MvtSlim` rewrites each tile keeping only height, num_floors, min_height, is_underground,
+    has_parts: 1.8 MB → 0.38 MB in ~40 ms; checked with @mapbox/vector-tile that all 10,003 features keep identical
+    geometry and properties.
+  - **Caches:** in-memory LRU (40 tiles) + disk cache `cacheDir/overture-tiles` (300 MB, oldest trimmed).
+  - **Prefetch:** every served z14 tile queues its 8 neighbours on a 6-thread pool with a LIFO queue (stale entries
+    beyond 48 are cancelled), shared in-flight futures.
+  - **Cancellation:** a request MapLibre cancels stops waiting within 0.2 s (its fetch still finishes into the
+    cache). Dispatcher 64 total / 16 per host.
+  - Interceptor never throws anything but IOException.
+- JVM check: first tile 1.2 s, its neighbours afterwards 1 ms, a cancelled request returns in 0.2 s.
