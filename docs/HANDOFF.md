@@ -1200,3 +1200,15 @@ Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in
   starts, Settings says "Overture buildings: off — …", and the map uses the style **without** Overture (OpenMapTiles
   3-D buildings back), via `OvertureBuildings.installed`.
 - Lesson: anything in `Application.onCreate` must never be able to throw.
+
+## 1.1.5 — Overture host blocked by the phone's DNS (user report, 2026-11-11)
+- Settings showed: "Failed to connect to overturemaps-extras-us-west-2.s3.us-west-2.amazonaws.com/0.0.0.0:443".
+  The phone's resolver answers **0.0.0.0** for that S3 host (ad-blocking Private DNS, blocker app, or carrier
+  filter). This is very likely also why MapLibre's own pmtiles:// source showed nothing in 1.1.2.
+- Fix: `net/BlockSafeDns` (OkHttp `Dns`): system DNS first; if it answers 0.0.0.0/::/loopback/nothing, it asks
+  Cloudflare, then Google, over HTTPS (bootstrapped by IP, IPv4 only) and remembers the host as blocked. Used by the
+  Overture tile client and by the daily STAC "latest release" lookup (moved from HttpJson to that client).
+  New dependency `okhttp-dnsoverhttps` 4.12.0.
+- Verified on the JVM: with the host forced onto the "blocked" path, DoH resolved it and the interceptor served the
+  1.8 MB Churubusco z14 tile. If the carrier blocks the S3 IPs themselves (not just DNS), this won't help; the
+  Settings line will then show a connect/timeout error with a real IP.

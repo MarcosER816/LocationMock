@@ -1,7 +1,6 @@
 package com.mockroute.app.map
 
 import android.content.Context
-import com.mockroute.app.net.HttpJson
 import com.mockroute.core.tiles.PmTilesReader
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -66,10 +65,13 @@ object OvertureBuildings {
         val f = file(context)
         val checkedAt = runCatching { JSONObject(f.readText()).optLong("checkedAt") }.getOrDefault(0L)
         if (System.currentTimeMillis() - checkedAt < REFRESH_MS) return null
-        val latest = runCatching {
-            val r = HttpJson.get(CATALOG)
-            if (r.code in 200..299) JSONObject(r.body ?: "").optString("latest").takeIf { it.matches(Regex("[0-9][0-9.-]+")) } else null
-        }.getOrNull() ?: return null
+        val latest = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                s3.newCall(Request.Builder().url(CATALOG).build()).execute().use { r ->
+                    if (r.isSuccessful) JSONObject(r.body?.string() ?: "").optString("latest").takeIf { it.matches(Regex("[0-9][0-9.-]+")) } else null
+                }
+            }.getOrNull()
+        } ?: return null
         val old = cachedRelease(context)
         runCatching { f.writeText(JSONObject().put("release", latest).put("checkedAt", System.currentTimeMillis()).toString()) }
         return latest.takeIf { it != old }
@@ -105,6 +107,7 @@ object OvertureBuildings {
     // ---- tile server ------------------------------------------------------------------------------------------
     /** Plain client for the Range requests to S3 (no interceptor, so no loop). */
     private val s3 = OkHttpClient.Builder()
+        .dns(com.mockroute.app.net.BlockSafeDns) // the user's phone DNS answers 0.0.0.0 for the S3 host
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()
