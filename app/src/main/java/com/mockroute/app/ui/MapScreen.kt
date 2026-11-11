@@ -123,13 +123,25 @@ fun MapScreen(vm: MainViewModel, onOpenSettings: () -> Unit, onOpenPlan: () -> U
     // Dark = MockRoute's own style bundled in the APK (assets/map_dark.json, built by tools/make_map_style.py):
     // blue water, dark-green parks, buildings lighter than the streets and in 3-D. Online styles are the fallbacks.
     val appContext = androidx.compose.ui.platform.LocalContext.current.applicationContext
-    val bundledDark = remember { runCatching { appContext.assets.open("map_dark.json").bufferedReader().use { it.readText() } }.getOrNull() }
+    val bundledRaw = remember { runCatching { appContext.assets.open("map_dark.json").bufferedReader().use { it.readText() } }.getOrNull() }
+    // Overture buildings (fill places OpenStreetMap has none): current release, checked once a day.
+    var overtureRelease by remember { mutableStateOf(com.mockroute.app.map.OvertureBuildings.cachedRelease(appContext)) }
+    LaunchedEffect(Unit) { com.mockroute.app.map.OvertureBuildings.refresh(appContext)?.let { overtureRelease = it } }
+    // Our style with Overture, then (if that fails to load) the same style without Overture, then online styles.
+    val bundledDark = remember(bundledRaw, overtureRelease) {
+        bundledRaw?.let {
+            listOf(
+                com.mockroute.app.map.OvertureBuildings.styleWith(it, overtureRelease),
+                com.mockroute.app.map.OvertureBuildings.styleWith(it, null),
+            )
+        } ?: emptyList()
+    }
     val styleChain: List<BaseStyle> = remember(settings?.mapStyle, bundledDark) {
         val mapStyle = settings?.mapStyle ?: "dark"
-        (if (mapStyle != "light" && bundledDark != null) listOf<BaseStyle>(BaseStyle.Json(bundledDark)) else emptyList()) +
+        (if (mapStyle != "light") bundledDark.map { BaseStyle.Json(it) } else emptyList()) +
             TileStyle.chainFor(mapStyle).map { BaseStyle.Uri(it) }
     }
-    var styleIndex by rememberSaveable(settings?.mapStyle) { mutableIntStateOf(0) }
+    var styleIndex by rememberSaveable(settings?.mapStyle, overtureRelease) { mutableIntStateOf(0) }
     val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val online by vm.online.collectAsStateWithLifecycle()
     val resumable by vm.resumable.collectAsStateWithLifecycle()

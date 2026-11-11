@@ -72,7 +72,8 @@ Builds run in GitHub Actions; the user installs the debug APK artifact.
   Trip green, errors pink). No dynamic colour, no light theme. Dark map by default.
 - Map (bundled `assets/map_dark.json`, built by `tools/make_map_style.py` from OpenFreeMap liberty): show as many
   buildings and details as possible (like Google Maps): buildings from z13, 3-D from z14, lighter than the streets;
-  POIs + house numbers; green areas dark green, water blue.
+  POIs + house numbers; green areas dark green, water blue. Overture Maps buildings (PMTiles, release looked up
+  daily by `map/OvertureBuildings.kt`) fill places where OpenStreetMap has no buildings.
 - Map overlays and panels: use `MapPanel` / `MapControlStack` / `Tag` from `ui/Widgets.kt`; overlays use the app
   palette with dark halos (never white casings).
 - Default speed & time of a route = the provider's values as given; the first plan takes exactly the provider's

@@ -8,6 +8,7 @@ Usage:
 Since 1.1.0 the source is OpenFreeMap's "liberty" style (not "dark"): it carries every OpenMapTiles layer a
 Google-Maps-like map needs (all buildings, 3-D heights, shops/POIs with icons, landuse kinds, bridges/tunnels,
 rail, road shields). This script repaints it on MockRoute's dark base and adds a few layers:
+  * Overture Maps buildings on top (fills places OpenStreetMap has no buildings for), from zoom 12;
   * every building flat from zoom 13 at all zooms (also those with no 3-D model) and in 3-D from zoom 14, LIGHTER than the streets, taller = lighter;
   * POI labels coloured by category (food orange, shops blue, parks green, health pink, transit sky,
     culture/education lilac), like Google Maps;
@@ -191,6 +192,38 @@ for layer in d["layers"]:
     out.append(layer)
 
     if lid == "building-3d":
+        # Overture Maps buildings (OpenStreetMap + footprints traced from imagery by Microsoft/Google/Esri): they
+        # cover neighbourhoods where OpenStreetMap has no buildings (e.g. most of Iztapalapa, CDMX). Drawn on top of
+        # the OpenMapTiles footprints. The PMTiles URL depends on Overture's monthly release and old releases are
+        # deleted, so the app puts the current one in place of OVERTURE_PLACEHOLDER (map/OvertureBuildings.kt) and
+        # then drops the OpenMapTiles 3-D layer to avoid two extrusions of the same building.
+        not_under = ["!=", ["get", "is_underground"], True]
+        # (["*", null, 3.2] is an error, not null, so the floor count must be checked with "has" first.)
+        ov_height = ["coalesce", ["get", "height"],
+                     ["case", ["has", "num_floors"], ["*", ["to-number", ["get", "num_floors"], 2], 3.2], 6]]
+        ov_extrusion = lambda h: {
+            "fill-extrusion-color": ["interpolate", ["linear"], h, 0, "#4E5A6A", 15, "#5A6779", 40, "#6C7B8F", 120, "#8796AB"],
+            "fill-extrusion-height": ["interpolate", ["linear"], ["zoom"], 14, 0, 14.6, h],
+            "fill-extrusion-base": ["interpolate", ["linear"], ["zoom"], 14, 0, 14.6, ["coalesce", ["get", "min_height"], 0]],
+            "fill-extrusion-opacity": 0.95,
+            "fill-extrusion-vertical-gradient": True,
+        }
+        out.append({
+            "id": "ov-building", "type": "fill", "source": "overture", "source-layer": "building", "minzoom": 12,
+            "filter": not_under,
+            "paint": {"fill-color": "#485363", "fill-outline-color": "#5A6677",
+                      "fill-opacity": ["interpolate", ["linear"], ["zoom"], 12, 0.7, 13, 1]},
+        })
+        out.append({
+            "id": "ov-building-3d", "type": "fill-extrusion", "source": "overture", "source-layer": "building",
+            "minzoom": 14, "filter": ["all", not_under, ["!=", ["get", "has_parts"], True]],
+            "paint": ov_extrusion(ov_height),
+        })
+        out.append({
+            "id": "ov-building-part-3d", "type": "fill-extrusion", "source": "overture", "source-layer": "building_part",
+            "minzoom": 14, "filter": not_under,
+            "paint": ov_extrusion(ov_height),
+        })
         # House numbers on top of the buildings (OpenMapTiles "housenumber", zoom 14+ in the tiles).
         out.append({
             "id": "housenumber", "type": "symbol", "source": layer["source"], "source-layer": "housenumber",
@@ -204,5 +237,9 @@ for layer in d["layers"]:
 non_sym = [l for l in out if l["type"] != "symbol"]
 sym = [l for l in out if l["type"] == "symbol"]
 d["layers"] = non_sym + sym
+d["sources"]["overture"] = {
+    "type": "vector", "url": "pmtiles://OVERTURE_PLACEHOLDER", "minzoom": 5, "maxzoom": 14,
+    "attribution": "Overture Maps Foundation",
+}
 json.dump(d, open(dst, "w"), separators=(",", ":"))
 print(len(d["layers"]), "layers ->", dst)

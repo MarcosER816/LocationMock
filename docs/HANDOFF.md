@@ -1158,3 +1158,19 @@ Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in
   opaque at zoom 13 (were 60 %, which looked like buildings fading out when zooming away).
 - Limit: OpenFreeMap tiles only carry buildings from zoom 13, and at zoom 13 the smallest ones are left out of the
   tiles; below zoom 13 no building can be shown with this map source.
+
+## 1.1.2 — Overture buildings (user report: no buildings in Col. Héroes de Churubusco, CDMX; 2026-11-11)
+- Cause: OpenStreetMap has **no building footprints** there (checked with the OSM API; OpenFreeMap's own liberty
+  style is empty there too), so no OpenMapTiles-based style could show them.
+- Fix: the map adds **Overture Maps buildings** (OSM + footprints traced from imagery; PMTiles on S3, free, no key,
+  `pmtiles://` source, supported by MapLibre Android 13). Layers `ov-building` (flat, from zoom 12),
+  `ov-building-3d` and `ov-building-part-3d` (from zoom 14; height = `height`, else floors × 3.2 m, else 6 m).
+  With Overture present the OpenMapTiles 3-D layer is dropped (no double extrusions); OpenMapTiles flat
+  footprints stay underneath as a fallback.
+- Overture deletes releases after ~2 months, so `map/OvertureBuildings.kt` reads the latest release from
+  `https://stac.overturemaps.org/catalog.json` at most once a day (cached in `filesDir/overture.json`; default
+  `2026-10-21.0`) and fills it into the style placeholder `OVERTURE_PLACEHOLDER`. The style chain is now: our
+  style with Overture → our style without Overture → online OpenFreeMap styles.
+- Checked by rendering with MapLibre GL JS + pmtiles in headless Chromium (Churubusco flat and tilted, Madrid
+  tilted); `:core:test` and `:app:assembleDebug` pass. **Not yet checked on the phone** (PMTiles on Android).
+- Attribution now mentions Overture Maps.

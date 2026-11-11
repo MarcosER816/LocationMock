@@ -19,5 +19,5 @@ object TileStyle {
     /** Style URLs to try in order for the chosen map style ("dark" or "light"). */
     fun chainFor(mapStyle: String): List<String> = if (mapStyle == "light") chain else listOf(DARK_URL) + chain
 
-    const val ATTRIBUTION = "© OpenStreetMap contributors · OpenFreeMap · OpenMapTiles"
+    const val ATTRIBUTION = "© OpenStreetMap contributors · OpenFreeMap · OpenMapTiles · Overture Maps"
 }
