@@ -36,7 +36,8 @@ object OrsCodec {
     data class Request(
         val coordinates: List<List<Double>>,
         @SerialName("extra_info") val extraInfo: List<String> = listOf("waytype"),
-        val instructions: Boolean = false,
+        // Steps carry the provider's distance & duration per street: the default speed profile (1.2.0).
+        val instructions: Boolean = true,
         val elevation: Boolean = false,
     )
 
@@ -60,6 +61,18 @@ object OrsCodec {
     data class Properties(
         val summary: Summary = Summary(),
         val extras: Map<String, Extra> = emptyMap(),
+        @SerialName("way_points") val wayPoints: List<Int> = emptyList(),
+        val segments: List<Segment> = emptyList(),
+    )
+
+    @Serializable
+    data class Segment(val distance: Double = 0.0, val duration: Double = 0.0, val steps: List<Step> = emptyList())
+
+    /** One instruction step: way_points = [fromIndex, toIndex] into the coordinate list. */
+    @Serializable
+    data class Step(
+        val distance: Double = 0.0,
+        val duration: Double = 0.0,
         @SerialName("way_points") val wayPoints: List<Int> = emptyList(),
     )
 
@@ -93,6 +106,15 @@ object OrsCodec {
             RouteSpan(geometry.cumulativeM(from), geometry.cumulativeM(to), roadClass = WAYTYPES[v[2].toInt()] ?: "unknown")
         }
         val summary = feature.properties.summary
+        // Provider speed per step: step distance / step duration over the step's stretch of geometry.
+        val speeds = feature.properties.segments.flatMap { it.steps }.mapNotNull { st ->
+            if (st.wayPoints.size < 2 || st.duration <= 0 || st.distance <= 0) return@mapNotNull null
+            val from = st.wayPoints[0].coerceIn(0, geometry.size - 1)
+            val to = st.wayPoints[1].coerceIn(0, geometry.size - 1)
+            val a = geometry.cumulativeM(from)
+            val b = geometry.cumulativeM(to)
+            if (b - a < 0.5) null else SpeedSpan(a, b, st.distance / st.duration)
+        }
         return RouteResult(
             geometry = geometry,
             distanceM = if (summary.distance > 0) summary.distance else geometry.lengthM,
@@ -100,6 +122,7 @@ object OrsCodec {
             providerId = providerId,
             profile = profile,
             spans = spans,
+            providerSpeeds = speeds,
         )
     }
 

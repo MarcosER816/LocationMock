@@ -1239,3 +1239,19 @@ Needs the `ORS_API_KEY` GitHub secret (set before this build) or a key pasted in
 - The straight-line notice now carries the real cause ("Can't reach OpenRouteService (<cause>). Using straight
   lines.") instead of "(offline?)", so the next report says what failed.
 - If routing still fails: ask for that notice text, or Settings → Test routing.
+
+## 1.2.0 — the provider's speed at every point is the default (user request, 2026-11-12)
+- Routes now carry `RouteResult.providerSpeeds` (`SpeedSpan` start/end/speed): ORS is asked for instructions and
+  each step's distance/duration over its `way_points` becomes a span; GraphHopper adds the `average_speed` detail.
+  Legs concatenate with offsets. Route cache key bumped to "v2" so old cached routes (no speeds) are refetched.
+- `core/plan/ProviderSpeedProfile`: piecewise-constant speed along the route, gaps = average speed, scaled so the
+  profile takes exactly the provider's ETA.
+- Planning: when there is no TomTom analysis, the provider profile is the copula's per-point median
+  (`localMedian`). The **first plan** of a route uses `noise = false` (z ≡ 0) + the provider's time, so it runs at
+  the provider's speed on every street (smoothed only by the acceleration limits; δ bisection keeps the time).
+  **Shuffle** turns the variation on (same profile shape). User-set gammas still apply (range clips, time, shuffle
+  spread). `AutoSettings.forRoute(…, providerSpeeds)` widens the default speed range to [0.9 × slowest, 1.1 ×
+  fastest] (≤ 100 km/h) so no street is clipped. Trips (`TimelinePlanner`) do the same for their route steps.
+- Tests: ORS step parsing, ETA normalisation with gaps, first plan cruising at 25/60 km/h on the two halves and
+  taking the provider time (117 core tests pass). Not checked against a live ORS/GraphHopper response here (no key
+  in this environment); if speeds look flat on the phone, the response lacked steps/average_speed.

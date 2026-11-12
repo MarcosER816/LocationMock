@@ -23,7 +23,8 @@ class RouteCache(context: Context) {
 
     fun key(providerId: String, profile: RoutingProfile, points: List<LatLon>): String {
         val raw = buildString {
-            append(providerId).append('|').append(profile.name)
+            // "v2": 1.2.0 routes carry the provider's per-street speeds; older cache entries don't.
+            append("v2|").append(providerId).append('|').append(profile.name)
             points.forEach { append('|').append(String.format(Locale.US, "%.6f,%.6f", it.lat, it.lon)) }
         }
         return MessageDigest.getInstance("SHA-256").digest(raw.toByteArray())

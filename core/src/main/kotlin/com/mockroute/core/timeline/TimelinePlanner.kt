@@ -171,12 +171,16 @@ object TimelinePlanner {
             val depart = startEpochS + startOffset.toLong()
             val traffic = src.traffic(seg, g, depart)
             // Custom settings if the user set them; otherwise data-driven ones for this hour (traffic / ETA / standard).
-            val auto = if (seg.settings == null) com.mockroute.core.plan.AutoSettings.forRoute(seg.profile, g.lengthM, routed.durationS, depart, src.zone, traffic) else null
+            // 1.2.0: the provider's speed per street (when there is no traffic analysis) shapes the plan.
+            val provider = if (traffic == null) com.mockroute.core.plan.ProviderSpeedProfile.of(routed.providerSpeeds, g.lengthM, routed.durationS) else null
+            val auto = if (seg.settings == null) com.mockroute.core.plan.AutoSettings.forRoute(seg.profile, g.lengthM, routed.durationS, depart, src.zone, traffic, provider) else null
             val st = seg.settings ?: auto!!.settings
             // Walking: real stops at street crossings (always: it's how walking in a city works).
             val stops = if (seg.profile == RoutingProfile.Walk) com.mockroute.core.plan.AutoSettings.crossingStops(g.lengthM, depart, src.zone, Random(seed xor 0x5eed)) else emptyList()
             val plan = SpeedProfileGenerator.generate(
-                SpeedProfileGenerator.Request(g, st, seg.profile, seed, v0 = v0, vEnd = vEnd, lockTime = firstPlan && auto != null, localMedian = traffic?.let { a -> { s: Double -> a.medianSpeedAt(s) } }, stops = stops),
+                SpeedProfileGenerator.Request(g, st, seg.profile, seed, v0 = v0, vEnd = vEnd, lockTime = firstPlan && auto != null,
+                    localMedian = traffic?.let { a -> { s: Double -> a.medianSpeedAt(s) } } ?: provider?.let { p -> { s: Double -> p.at(s) } },
+                    noise = !(firstPlan && provider != null), stops = stops),
             )
             PlannedSegment(i, seg, PlanTrajectory(g, plan), startOffset, plan.totalTimeS, g.lengthM, v0, vEnd, g.points, plan.warning, settingsSource = auto?.source ?: "custom")
         }

@@ -104,6 +104,8 @@ object AutoSettings {
         departEpochS: Long,
         zone: ZoneId,
         traffic: TrafficAnalysis? = null,
+        /** 1.2.0: the provider's per-street speeds; the default speed range is widened to contain them. */
+        providerSpeeds: ProviderSpeedProfile? = null,
     ): Result {
         val p = period(departEpochS, zone)
         val clock = "%02d:%02d".format(Instant.ofEpochSecond(departEpochS).atZone(zone).hour, Instant.ofEpochSecond(departEpochS).atZone(zone).minute)
@@ -123,10 +125,16 @@ object AutoSettings {
         val vMean = (distanceM / moving.coerceAtLeast(1.0)).coerceIn(0.5, 100 / 3.6)
         val walk = profile == RoutingProfile.Walk
         val spread = if (walk) 0.30 else 0.60
-        val vLo = vMean * (1 - spread)
-        val vHi = min(100 / 3.6, vMean * (1 + spread))
-        val cvV = if (walk) 0.12 else 0.20
-        val speedG = BoundedGamma.withMeanVariance(vLo, vHi, vMean, (cvV * vMean).let { it * it })
+        var vLo = vMean * (1 - spread)
+        var vHi = min(100 / 3.6, vMean * (1 + spread))
+        var sdV = (if (walk) 0.12 else 0.20) * vMean
+        if (fromProvider && providerSpeeds != null) {
+            // Room for the provider's slowest and fastest streets (the first plan follows them exactly).
+            vLo = min(vLo, providerSpeeds.minMps * 0.9).coerceAtLeast(0.3)
+            vHi = min(100 / 3.6, max(vHi, providerSpeeds.maxMps * 1.1))
+            sdV = max(sdV, (providerSpeeds.maxMps - providerSpeeds.minMps) / 4)
+        }
+        val speedG = BoundedGamma.withMeanVariance(vLo, vHi, vMean, sdV * sdV)
         val preset = AccelerationPreset.defaultFor(profile)
         val tMean = if (fromProvider) moving else moving + wait
         val sd = 0.12 * tMean

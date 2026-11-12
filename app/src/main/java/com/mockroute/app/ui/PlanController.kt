@@ -56,6 +56,8 @@ class PlanController(
     private val traffic: StateFlow<TrafficStatus>,
     /** Router ETA of the current route (for data-driven defaults when the user hasn't set speed & time). */
     private val eta: () -> Double? = { null },
+    /** 1.2.0: the provider's per-street speeds for the current route (null if none / straight line). */
+    private val providerSpeeds: (RouteGeometry) -> com.mockroute.core.plan.ProviderSpeedProfile? = { null },
 ) {
     private val _seed = MutableStateFlow(Random.nextLong(1, Long.MAX_VALUE))
     val seed: StateFlow<Long> = _seed.asStateFlow()
@@ -84,7 +86,8 @@ class PlanController(
                 // Use predicted chunk speeds as the copula's local median when the analysis is for this route.
                 val median = (tr as? TrafficStatus.Ready)?.takeIf { it.geometry == r.first }?.analysis
                 // First plan of a route = exactly the default time (the provider's); Shuffle then samples around it.
-                Inputs(r.first, r.second, s, seed, lock || shuffledFor != r.first, median)
+                // …and follows the provider's speed at every point with no random variation until Shuffle.
+                Inputs(r.first, r.second, s, seed, lock || shuffledFor != r.first, median, shuffled = shuffledFor == r.first)
             }
                 .distinctUntilChanged()
                 .debounce(250)
@@ -99,14 +102,17 @@ class PlanController(
         val seed: Long,
         val lock: Boolean,
         val traffic: com.mockroute.core.traffic.TrafficAnalysis?,
+        val shuffled: Boolean,
     )
 
     private suspend fun compute(inp: Inputs): PlanStatus {
         val g = inp.geometry
         if (g == null || g.size < 2 || g.lengthM < 1.0) return PlanStatus.NoRoute
         // Not set by the user → data-driven: traffic (car/bus with TomTom), router ETA × hour, or standard speed.
+        val provider = if (inp.traffic == null) providerSpeeds(g) else null
         val st = inp.settings ?: com.mockroute.core.plan.AutoSettings.forRoute(
             inp.profile, g.lengthM, eta(), System.currentTimeMillis() / 1000 + 60, java.time.ZoneId.systemDefault(), inp.traffic,
+            providerSpeeds = provider,
         ).settings
         if (!st.feasibility(g.lengthM).feasible) return PlanStatus.Infeasible
         _status.value = PlanStatus.Generating
@@ -114,7 +120,10 @@ class PlanController(
             val plan = SpeedProfileGenerator.generate(
                 SpeedProfileGenerator.Request(
                     g, st, inp.profile, inp.seed, lockTime = inp.lock,
-                    localMedian = inp.traffic?.let { a -> { s: Double -> a.medianSpeedAt(s) } },
+                    // Per-point median: TomTom traffic if analysed, else the routing provider's speed per street.
+                    localMedian = inp.traffic?.let { a -> { s: Double -> a.medianSpeedAt(s) } }
+                        ?: provider?.let { p -> { s: Double -> p.at(s) } },
+                    noise = inp.shuffled || (inp.traffic == null && provider == null),
                 ),
             )
             val scale = SpeedColorScale.forPlan(plan, st)

@@ -71,6 +71,12 @@ object SpeedProfileGenerator {
         val targetTimeS: Double? = null,
         /** Stage 7: extra per-position speed cap (m/s) at distance s, e.g. maxspeed or sharp turns. */
         val speedCap: ((Double) -> Double)? = null,
+        /**
+         * 1.2.0: false = no random variation (z ≡ 0), so every node runs at [localMedian] (the provider's speed),
+         * only shifted as a whole (δ) to hit the time and smoothed by the acceleration limits. Used for the first
+         * plan of a route; Shuffle turns the variation on.
+         */
+        val noise: Boolean = true,
     )
 
     data class Stop(val atM: Double, val durationS: Double)
@@ -113,6 +119,7 @@ object SpeedProfileGenerator {
         val z = DoubleArray(n + 1)
         z[0] = gaussian(rng)
         for (i in 1..n) z[i] = rho * z[i - 1] + innov * gaussian(rng)
+        if (!req.noise) z.fill(0.0)
 
         // 3. Speed table v(z) = G⁻¹(Φ(z)) for the distance-weighted marginal, clipped.
         val table = SpeedTable.build(st.speed.distribution(), vFloor, st.vMax)

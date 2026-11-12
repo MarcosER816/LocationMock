@@ -122,6 +122,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val analysis = (traffic.status.value as? TrafficStatus.Ready)?.takeIf { it.geometry == st.result?.geometry }?.analysis
         return com.mockroute.core.plan.AutoSettings.forRoute(
             st.profile, d, st.result?.durationS, System.currentTimeMillis() / 1000 + 60, java.time.ZoneId.systemDefault(), analysis,
+            providerSpeeds = if (analysis == null) st.result?.let(com.mockroute.core.plan.ProviderSpeedProfile::of) else null,
         ).settings
     }
 
@@ -156,7 +157,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _plan.value = analysis.settings.copy(correlationLengthM = _plan.value?.correlationLengthM)
     }
 
-    val planner = PlanController(viewModelScope, routeForPlan, _plan, traffic.status) { editor.state.value.result?.durationS }
+    val planner = PlanController(
+        viewModelScope, routeForPlan, _plan, traffic.status,
+        eta = { editor.state.value.result?.durationS },
+        providerSpeeds = { g -> editor.state.value.result?.takeIf { it.geometry == g }?.let(com.mockroute.core.plan.ProviderSpeedProfile::of) },
+    )
 
     /** Diagnostics: route cache key, cached samples on disk, last cache problem. */
     fun trafficCacheInfo(status: TrafficStatus): String {

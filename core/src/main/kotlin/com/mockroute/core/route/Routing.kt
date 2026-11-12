@@ -19,6 +19,10 @@ data class RouteSpan(
     val roadClass: String? = null,
 )
 
+/** The provider's own travel speed over [startM, endM) (from its per-step / per-edge times). */
+@Serializable
+data class SpeedSpan(val startM: Double, val endM: Double, val speedMps: Double)
+
 @Serializable
 data class RouteResult(
     val geometry: RouteGeometry,
@@ -33,6 +37,8 @@ data class RouteResult(
     val isFallback: Boolean = false,
     /** User-facing notice explaining a fallback. */
     val notice: String? = null,
+    /** The provider's speed along the route (ORS steps / GraphHopper average_speed); empty if not given. */
+    val providerSpeeds: List<SpeedSpan> = emptyList(),
 ) {
     companion object {
         /** Concatenates consecutive legs (end of leg i == start of leg i+1) into one result. */
@@ -40,11 +46,15 @@ data class RouteResult(
             if (legs.isEmpty()) return null
             var geometry = RouteGeometry.EMPTY
             val spans = mutableListOf<RouteSpan>()
+            val speeds = mutableListOf<SpeedSpan>()
+            var speedsKnown = true
             var durationKnown = true
             var duration = 0.0
             for (leg in legs) {
                 val offset = geometry.lengthM
                 spans += leg.spans.map { it.copy(startM = it.startM + offset, endM = it.endM + offset) }
+                if (leg.providerSpeeds.isEmpty()) speedsKnown = false
+                speeds += leg.providerSpeeds.map { it.copy(startM = it.startM + offset, endM = it.endM + offset) }
                 geometry += leg.geometry
                 if (leg.durationS == null) durationKnown = false else duration += leg.durationS
             }
@@ -57,6 +67,7 @@ data class RouteResult(
                 spans = spans,
                 isFallback = legs.any { it.isFallback },
                 notice = legs.firstNotNullOfOrNull { it.notice },
+                providerSpeeds = if (speedsKnown) speeds else emptyList(),
             )
         }
     }

@@ -37,7 +37,7 @@ object GraphHopperCodec {
         @SerialName("points_encoded") val pointsEncoded: Boolean = false,
         val instructions: Boolean = false,
         @SerialName("calc_points") val calcPoints: Boolean = true,
-        val details: List<String> = listOf("max_speed", "road_class"),
+        val details: List<String> = listOf("max_speed", "road_class", "average_speed"),
     )
 
     fun requestBody(points: List<LatLon>, profile: RoutingProfile): String {
@@ -83,8 +83,16 @@ object GraphHopperCodec {
             if (s == null && rc == null) null
             else RouteSpan(geometry.cumulativeM(from), geometry.cumulativeM(to), speedLimitKmh = s, roadClass = rc)
         }
+        // Provider speed per edge (average_speed, km/h).
+        val speeds = intervals(path.details["average_speed"], geometry.size).mapNotNull { (from, to, v) ->
+            val kmh = v.jsonPrimitive.doubleOrNull ?: return@mapNotNull null
+            val a = geometry.cumulativeM(from)
+            val b = geometry.cumulativeM(to)
+            if (kmh <= 0 || b - a < 0.5) null else SpeedSpan(a, b, kmh / 3.6)
+        }
         return RouteResult(
             geometry = geometry,
+            providerSpeeds = speeds,
             distanceM = if (path.distance > 0) path.distance else geometry.lengthM,
             durationS = (path.time / 1000.0).takeIf { it > 0 },
             providerId = providerId,

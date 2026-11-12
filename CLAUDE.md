@@ -77,7 +77,8 @@ Builds run in GitHub Actions; the user installs the debug APK artifact.
 - Map overlays and panels: use `MapPanel` / `MapControlStack` / `Tag` from `ui/Widgets.kt`; overlays use the app
   palette with dark halos (never white casings).
 - Default speed & time of a route = the provider's values as given; the first plan takes exactly the provider's
-  time, Shuffle samples around it.
+  time AND follows the provider's speed at every point (ORS step / GraphHopper average_speed, scaled to its ETA;
+  no random variation). Shuffle adds variation around that profile; the gammas reshape it.
 - Buttons are smooth squares (use the wrappers in `ui/Widgets.kt`; never Material's pill buttons).
 - Animations: ease-OUT only, never ease-in, at most 0.1 s (`AppMotion.spec()`).
 - The map always keeps at least 50 % of the screen; bottom panels scroll inside ≤ 45 %.
